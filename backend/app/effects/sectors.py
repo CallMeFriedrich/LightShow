@@ -12,23 +12,23 @@ import numpy as np
 FEATHER = 0.035  # 3.5 % des Streifens
 
 # Aktive Bereiche je Muster (Fraktionen [0,1]) — alle mirror-symmetrisch.
+# Bewusst BREIT gehalten: der ganze Streifen soll dominieren, keine schmalen
+# Mitten-Muster mehr.
 PATTERNS: dict[str, list[tuple[float, float]]] = {
     "full": [(0.0, 1.0)],
-    "center": [(0.35, 0.65)],
-    "edges": [(0.0, 0.18), (0.82, 1.0)],
-    "thirds_out": [(0.0, 0.33), (0.67, 1.0)],
-    "quarters": [(0.125, 0.375), (0.625, 0.875)],
-    "mid_third": [(0.33, 0.67)],
+    "wide_center": [(0.18, 0.82)],           # fast der ganze Streifen
+    "edges": [(0.0, 0.32), (0.68, 1.0)],     # breite Enden
+    "thirds_out": [(0.0, 0.40), (0.60, 1.0)],
+    "quarters": [(0.08, 0.36), (0.64, 0.92)],
 }
 
-# Muster-Gewichtung: full ×9, Rest je 1×.
+# Muster-Gewichtung: full stark dominant, Rest breit.
 WEIGHTS: dict[str, int] = {
-    "full": 9,
-    "center": 1,
-    "edges": 1,
-    "thirds_out": 1,
+    "full": 14,
+    "wide_center": 3,
+    "edges": 3,
+    "thirds_out": 2,
     "quarters": 1,
-    "mid_third": 1,
 }
 
 
