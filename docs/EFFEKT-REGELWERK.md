@@ -84,13 +84,24 @@ Erkennung `[code]`: bass > 0.4 und Höhen < 0.22 und Mitten < 0.45.
 
 ---
 
-## 6. Feature-Effekte & Auswahl nach Song
+## 6. Feature-Effekte & Auswahl nach Songabschnitt
 
-Pro Szene wird EIN „Feature-Effekt" gewählt, passend zum Song-Charakter:
+**Pro Songabschnitt GENAU EIN fester Effekt** (kein Zufalls-Rotieren — wirkte
+„freestyled"). Der Effekt bleibt stabil, solange der Abschnitt läuft, und wechselt
+NUR beim Abschnittswechsel. Feste Zuordnung `[code: SECTION_FEATURE]`:
 
-- **Ruhige Songs** (mood < 0.45) `[code]`: Pool = **colordrift, comet, quad, colordrift**
-- **Energiereiche Songs** (mood ≥ 0.45) `[code]`: Pool = **theater, dual, bounce, comet**
-- Regel: Chase-**Richtung** variiert pro Szene zufällig.
+| Abschnitt | Effekt | warum |
+|-----------|--------|-------|
+| **Intro** | `colordrift` | ruhig, driftender Verlauf, kein Blinken |
+| **Build-up** | `theater` | marschierende Punkte → steigende Spannung |
+| **Drop/Chorus** | `dual` | zwei Kometen zur Mitte → energetisch |
+| **Verse** | `comet` | ein Komet, tempo-synchron |
+| **Breakdown** | `quad` | 4-Teiler, sanfter Crossfade → ruhig |
+| **Outro** | `colordrift` | ruhig, fährt runter |
+
+- Beim Abschnittswechsel wird einmalig ein Sektor-Muster + Chase-Richtung gewählt (dann stabil).
+- Abschnitte werden realtime erkannt (`effects/sections.py`: Energie-EMA+Trend, Songposition, Drops).
+- (Die frühere mood-basierte Pool-Zufallswahl ist damit ersetzt.)
 
 Verfügbare Effekte:
 - **colordrift** — langsamer, driftender Farbverlauf (ruhig, kein Blinken)
