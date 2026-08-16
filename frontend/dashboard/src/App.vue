@@ -10,7 +10,9 @@ const analysis = reactive({
   energy: 0, mood: 0, bpm: 0, beat: false, onset: 0, drop: false,
   song_time: 0, silence: false,
 });
-const show = reactive({ scene: "—", pattern: "—", bass_passage: false, blackout: false, strobe: false, eff_intensity: 0, buildup: 0, drop: false });
+const show = reactive({ scene: "—", pattern: "—", section: "verse", bass_passage: false, blackout: false, strobe: false, eff_intensity: 0, buildup: 0, drop: false });
+const SECTION_COLORS = { intro: "bg-sky-500/40", build: "bg-amber-500/50", drop: "bg-fuchsia-500/60", verse: "bg-white/15", break: "bg-indigo-500/40", outro: "bg-slate-500/40" };
+const SECTION_LABELS = { intro: "Intro", build: "Build-up", drop: "Drop / Chorus", verse: "Verse", break: "Breakdown", outro: "Outro" };
 const player = reactive({ online: false, state: "idle", elapsed: 0, player_name: "", track: { title: "", artist: "", album: "", image_url: "", duration: 0 } });
 const preview = ref([]);
 const status = ref(null);
@@ -199,7 +201,11 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
           <div class="text-xs uppercase text-gray-400">Aktive Szene</div>
-          <div class="text-lg font-medium">{{ show.scene }} · <span class="text-gray-400">{{ show.pattern }}</span></div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded text-xs font-semibold" :class="SECTION_COLORS[show.section] || 'bg-white/15'">
+              {{ SECTION_LABELS[show.section] || show.section }}</span>
+            <span class="text-lg font-medium">{{ show.scene }} · <span class="text-gray-400">{{ show.pattern }}</span></span>
+          </div>
         </div>
         <div class="flex gap-2">
           <span v-if="analysis.silence" class="px-2 py-1 rounded bg-blue-500/30 text-xs">idle</span>

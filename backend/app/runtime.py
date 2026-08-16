@@ -24,6 +24,7 @@ from .core.engine import Engine
 from .core.event_bus import EventBus
 from .effects.compositor import ShowEngine
 from .effects.config import ShowConfig
+from .effects.sections import SectionDetector
 from .integrations.color import fetch_hue
 from .integrations.home_assistant import HAClient
 from .integrations.lookahead import LookAhead
@@ -84,6 +85,7 @@ class AppState:
         )
         self.latest_analysis = AnalysisFrame(bands=[0.0] * self.settings.bands)
         self._preview_decimator = 0
+        self.sections = SectionDetector()
 
         # ── Music Assistant + Look-ahead ──
         self.player = PlayerState(online=False)
@@ -126,13 +128,23 @@ class AppState:
             a = self.latest_analysis
 
             buildup, predicted = self._lookahead_step(now, a)
-            buf, fixture_gains = self.show.render(a, now, dt, buildup, predicted)
+            section, tension = self.sections.update(a.energy, a.drop_now, self._song_pos(now), dt)
+            buf, fixture_gains = self.show.render(a, now, dt, buildup, predicted, section, tension)
             await self.router.broadcast(buf, fixture_gains)
 
             self._preview_decimator = (self._preview_decimator + 1) % 4
             if self._preview_decimator == 0:
                 self.bus.publish("render.preview", self.preview.as_hex())
                 self.bus.publish("show.status", self.show.status)
+
+    def _song_pos(self, now: float) -> float | None:
+        """Relative Position im Song [0,1] aus SendSpin elapsed/duration (oder None)."""
+        p = self.player
+        dur = p.track.duration
+        if not (p.online and p.is_playing and dur > 0):
+            return None
+        elapsed = self._player_elapsed + (now - self._player_ts)
+        return max(0.0, min(1.0, elapsed / dur))
 
     def _lookahead_step(self, now: float, a: AnalysisFrame) -> tuple[float, bool]:
         """Elapsed interpolieren, Realtime-Drops aufzeichnen, Build-up berechnen."""

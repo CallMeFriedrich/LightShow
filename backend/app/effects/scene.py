@@ -27,16 +27,26 @@ class SceneManager:
         self._scene_start = 0.0
         self._pixels = 0
 
-    def maybe_advance(self, t: float, mood: float, scene_seconds: float, pixels: int, floor: float) -> bool:
-        """Wechselt die Szene, wenn fällig. Gibt True bei Wechsel zurück."""
-        if self.mask is None or self._pixels != pixels or (t - self._scene_start) >= scene_seconds:
-            self._new_scene(t, mood, pixels, floor)
+    def maybe_advance(self, t: float, mood: float, scene_seconds: float, pixels: int,
+                      floor: float, pool: str | None = None, force: bool = False) -> bool:
+        """Wechselt die Szene, wenn fällig oder erzwungen. True bei Wechsel.
+
+        ``pool``: "calm" | "energetic" | None (dann nach mood).
+        """
+        due = self.mask is None or self._pixels != pixels or (t - self._scene_start) >= scene_seconds
+        if force or due:
+            self._new_scene(t, mood, pixels, floor, pool)
             return True
         return False
 
-    def _new_scene(self, t: float, mood: float, pixels: int, floor: float) -> None:
-        pool = POOL_ENERGETIC if mood >= MOOD_SPLIT else POOL_CALM
-        self.feature_name = str(self.rng.choice(pool))
+    def _new_scene(self, t: float, mood: float, pixels: int, floor: float, pool: str | None = None) -> None:
+        if pool == "energetic":
+            names = POOL_ENERGETIC
+        elif pool == "calm":
+            names = POOL_CALM
+        else:
+            names = POOL_ENERGETIC if mood >= MOOD_SPLIT else POOL_CALM
+        self.feature_name = str(self.rng.choice(names))
         self.feature = FEATURES[self.feature_name]()
         self.pattern = sectors.pick_pattern(self.rng)
         self.mask = sectors.make_mask(pixels, self.pattern, floor)
