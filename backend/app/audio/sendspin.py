@@ -41,6 +41,7 @@ class SendSpinSource(AudioSource):
         self.s = settings
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         self._id_path = Path(settings.data_dir) / "sendspin_id"
+        self._chunks = 0
 
     # ── stabile client_id (persistiert, damit MASS uns wiedererkennt) ──
     def _client_id(self) -> str:
@@ -69,6 +70,11 @@ class SendSpinSource(AudioSource):
 
     def _on_audio(self, timestamp_us: int, pcm: bytes, fmt) -> None:
         """SDK-Callback (Event-Loop): dekodiertes PCM einreihen (Drop-Oldest)."""
+        self._chunks += 1
+        if self._chunks <= 3 or self._chunks % 400 == 0:
+            log.info("SendSpin Audio-Chunk #%d: %d Bytes %dHz/%dch/%dbit",
+                     self._chunks, len(pcm), fmt.pcm_format.sample_rate,
+                     fmt.pcm_format.channels, fmt.pcm_format.bit_depth)
         item = (pcm, fmt.pcm_format.sample_rate, fmt.pcm_format.channels, fmt.pcm_format.bit_depth)
         try:
             self._queue.put_nowait(item)
@@ -93,6 +99,10 @@ class SendSpinSource(AudioSource):
         )
         client.add_audio_chunk_listener(self._on_audio)
         client.add_disconnect_listener(self._on_disconnect)
+        # Diagnose: sehen, was MASS über SendSpin schickt.
+        client.add_stream_start_listener(lambda m: log.info("SendSpin stream/start empfangen: %r", m))
+        client.add_stream_end_listener(lambda r: log.info("SendSpin stream/end: %r", r))
+        client.add_metadata_listener(lambda p: log.info("SendSpin metadata empfangen"))
         return client
 
     async def frames(self) -> AsyncIterator[PCMFrame]:
