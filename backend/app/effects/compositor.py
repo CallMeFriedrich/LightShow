@@ -84,7 +84,6 @@ class ShowEngine:
         cfg = self.cfg
         drop_eff = a.drop_now or predicted_drop
         sp = _SECTION_PARAMS.get(section, _SECTION_PARAMS["verse"])
-        section_changed = section != self._section
         self._section = section
 
         # Intensität: Grund × mood × Abschnitt × (Build-up/Spannung).
@@ -104,9 +103,8 @@ class ShowEngine:
             self.idle.render(canvas, ctx)
         else:
             bass_passage = a.bass > 0.4 and a.highs < 0.22 and a.mids < 0.45
-            # Szenenwechsel bei Abschnittswechsel erzwingen + Pool je Abschnitt.
-            self.scene.maybe_advance(t, a.mood, cfg.scene_seconds, self.pixels,
-                                     cfg.section_floor, pool=sp["pool"], force=section_changed)
+            # Fester Effekt je Abschnitt; wechselt NUR beim Abschnittswechsel.
+            self.scene.ensure(section, self.pixels, cfg.section_floor)
             ctx.direction = self.scene.direction
             if bass_passage:
                 self._render_bass(canvas, ctx)

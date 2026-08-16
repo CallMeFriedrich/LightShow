@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..effects.features import FEATURES
-from ..effects.scene import POOL_CALM, POOL_ENERGETIC
+from ..effects.scene import SECTION_FEATURE
 
 _PLAYER_ACTIONS = {"play", "pause", "play_pause", "next", "previous"}
 
@@ -69,7 +69,7 @@ def build_router() -> APIRouter:
     async def effects():
         return {
             "features": {name: cls.__doc__ or "" for name, cls in FEATURES.items()},
-            "pools": {"calm": POOL_CALM, "energetic": POOL_ENERGETIC},
+            "section_feature": SECTION_FEATURE,
         }
 
     @router.post("/base_hue")
