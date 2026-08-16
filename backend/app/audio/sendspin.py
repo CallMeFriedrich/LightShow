@@ -105,10 +105,15 @@ class SendSpinSource(AudioSource):
                 await client.disconnect()
             return
         log.info("SendSpin-Client aktiv (mode=%s, id=%s)", self.s.sendspin_mode, self._client_id())
+        listen = self.s.sendspin_mode == "listen"
         try:
             while True:
                 item = await self._queue.get()
                 if item is None:
+                    # Verbindung zu MASS zu. Im listen-Modus bleibt der Listener
+                    # aktiv (MASS macht Discovery-Probes + verbindet zum Streamen neu).
+                    if listen:
+                        continue
                     log.warning("SendSpin-Verbindung beendet — Reconnect via Supervisor")
                     break
                 frame = self._to_frame(item)
