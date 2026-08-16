@@ -75,6 +75,7 @@ class AppState:
         self.lookahead = LookAhead()
         self._http: httpx.AsyncClient | None = None
         self._last_cover_url = ""
+        self._source = None  # aktive AudioSource (für Steuerung, z. B. SendSpin)
         # MASS-WS-Client nur mit Token (die MASS-2.9-WS-API verlangt Auth). Ohne Token
         # aus → kein Spam; Player-Metadaten kommen dann über SendSpin.
         self.mass = (
@@ -85,6 +86,7 @@ class AppState:
     # ── Tasks ──
     async def _audio_task(self) -> None:
         source = build_source(self.settings, on_metadata=self._on_sendspin_meta)
+        self._source = source
         log.info("Audio-Quelle: %s", source.name)
         try:
             async for pcm in source.frames():
@@ -92,6 +94,7 @@ class AppState:
                 self.latest_analysis = frame
                 self.bus.publish("audio.analysis", frame)
         finally:
+            self._source = None
             await source.close()
 
     async def _render_task(self) -> None:
@@ -220,7 +223,14 @@ class AppState:
         return self.show_cfg.update(changes)
 
     async def player_command(self, action: str, value: float | None = None) -> bool:
-        """Delegiert Player-Kommandos an MASS (No-op, wenn MASS nicht konfiguriert)."""
+        """Playback-Steuerung — bevorzugt über die aktive SendSpin-Quelle, sonst MASS."""
+        src = self._source
+        if src is not None and hasattr(src, "command"):
+            act = action
+            if action == "play_pause":
+                act = "pause" if self.player.state == "playing" else "play"
+            if await src.command(act, value):
+                return True
         if not self.mass:
             return False
         cmds = {

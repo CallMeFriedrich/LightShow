@@ -43,6 +43,7 @@ class SendSpinSource(AudioSource):
         self._id_path = Path(settings.data_dir) / "sendspin_id"
         self._chunks = 0
         self._on_metadata = on_metadata  # Callback(dict) für Player-Metadaten
+        self._client = None              # aktueller SendSpin-Client (für Steuerung)
 
     # ── stabile client_id (persistiert, damit MASS uns wiedererkennt) ──
     def _client_id(self) -> str:
@@ -92,18 +93,39 @@ class SendSpinSource(AudioSource):
         from aiosendspin.client import SendspinClient
         from aiosendspin.models.types import Roles
 
-        # PLAYER (Audio) + METADATA (Titel/Cover/Progress — braucht keine Support-Config).
+        # PLAYER (Audio) + METADATA (Titel/Cover) + CONTROLLER (Play/Pause/Skip).
         client = SendspinClient(
             self._client_id(),
             self.s.sendspin_name,
-            roles=[Roles.PLAYER, Roles.METADATA],
+            roles=[Roles.PLAYER, Roles.METADATA, Roles.CONTROLLER],
             player_support=self._player_support(),
         )
         client.add_audio_chunk_listener(self._on_audio)
         client.add_disconnect_listener(self._on_disconnect)
         client.add_metadata_listener(self._on_metadata_msg)
         client.add_group_update_listener(self._on_group_msg)
+        self._client = client
         return client
+
+    async def command(self, action: str, value: float | None = None) -> bool:
+        """Playback-Steuerung über SendSpin (Controller-Rolle). True bei Erfolg."""
+        from aiosendspin.models.types import MediaCommand
+
+        client = self._client
+        if client is None or not client.connected:
+            return False
+        if action == "volume" and value is not None:
+            await client.send_group_command(MediaCommand.VOLUME, volume=int(max(0.0, min(1.0, value)) * 100))
+            return True
+        mapping = {
+            "play": MediaCommand.PLAY, "pause": MediaCommand.PAUSE,
+            "next": MediaCommand.NEXT, "previous": MediaCommand.PREVIOUS,
+        }
+        cmd = mapping.get(action)
+        if cmd is None:
+            return False
+        await client.send_group_command(cmd)
+        return True
 
     # ── Metadaten → Callback (Titel/Cover/Playback-State) ──
     def _on_metadata_msg(self, payload) -> None:
