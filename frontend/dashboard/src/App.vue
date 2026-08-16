@@ -1,5 +1,8 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
+import Console from "./Console.vue";
+
+const view = ref("dashboard");
 
 const connected = ref(false);
 const analysis = reactive({
@@ -102,6 +105,17 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
       </div>
     </header>
 
+    <!-- Tabs: Dashboard / Licht-Pult -->
+    <div class="flex gap-2 mb-4">
+      <button @click="view = 'dashboard'" class="px-4 py-1.5 rounded-lg text-sm font-medium"
+              :class="view === 'dashboard' ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">Dashboard</button>
+      <button @click="view = 'console'" class="px-4 py-1.5 rounded-lg text-sm font-medium"
+              :class="view === 'console' ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">Licht-Pult</button>
+    </div>
+
+    <Console v-show="view === 'console'" />
+
+    <div v-show="view === 'dashboard'">
     <!-- Hinweis: Testsignal statt echter Musik -->
     <div v-if="isSynthetic"
          class="mb-4 px-4 py-2 rounded-lg bg-amber-500/15 ring-1 ring-amber-500/40 text-amber-200 text-sm">
@@ -292,6 +306,8 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
                 class="px-4 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-sm font-medium">Hinzufügen</button>
       </div>
     </div>
+
+    </div><!-- /dashboard view -->
 
     <footer class="mt-8 text-center text-xs text-gray-500">
       Quelle: {{ status?.audio_source ?? "…" }} · {{ status?.frame_rate ?? "…" }} Hz ·

@@ -25,12 +25,15 @@ from .core.event_bus import EventBus
 from .effects.compositor import ShowEngine
 from .effects.config import ShowConfig
 from .integrations.color import fetch_hue
+from .integrations.home_assistant import HAClient
 from .integrations.lookahead import LookAhead
 from .integrations.models import PlayerState
 from .integrations.music_assistant import MassClient
+from .output.artnet import ArtnetOutput
 from .output.base import OutputRouter
 from .output.virtual import VirtualOutput
 from .output.wled import WledOutput
+from .persistence.console import ConsoleManager
 from .persistence.devices import load_devices, save_devices
 from .persistence.store import DropStore
 
@@ -63,11 +66,14 @@ class AppState:
             if self.devices:
                 save_devices(self._devices_path, self.devices)
         for d in self.devices:
-            self.router.add(WledOutput(d["id"], d.get("name") or d["id"], d["host"],
-                                       int(d.get("pixels", pixels)), int(d.get("port", 4048))))
+            self.router.add(self._make_output(d))
 
         fixtures = len(self.devices) or self.settings.fixtures
         self.show = ShowEngine(self.show_cfg, pixels=pixels, fixtures=fixtures)
+
+        # Licht-Pult + Home Assistant.
+        self.console = ConsoleManager(f"{self.settings.data_dir}/console.json")
+        self.ha = HAClient(self.settings.ha_url, self.settings.ha_token)
 
         analysis_rate = self.settings.audio_sample_rate / self.settings.audio_block_size
         self.analyzer = Analyzer(
@@ -211,6 +217,7 @@ class AppState:
     async def stop(self) -> None:
         await self.supervisor.stop()
         await self.router.close()
+        await self.ha.close()
         if self._http:
             await self._http.aclose()
         self.store.close()
@@ -234,19 +241,33 @@ class AppState:
     def update_config(self, changes: dict) -> list[str]:
         return self.show_cfg.update(changes)
 
-    # ── Geräte-Verwaltung (WLED) ──
+    # ── Geräte-Verwaltung (WLED / ArtNet) ──
+    def _make_output(self, d: dict):
+        px = int(d.get("pixels", self._pixels))
+        if d.get("type") == "artnet":
+            return ArtnetOutput(d["id"], d.get("name") or d["id"], d["host"], px,
+                                int(d.get("port", 6454)), int(d.get("universe", 0)))
+        return WledOutput(d["id"], d.get("name") or d["id"], d["host"], px, int(d.get("port", 4048)))
+
     def list_devices(self) -> list[dict]:
         online = {d.id: d.online for d in self.router.devices}
         return [{**d, "online": online.get(d["id"])} for d in self.devices]
 
-    def add_device(self, host: str, name: str = "", pixels: int | None = None, port: int = 4048) -> dict:
+    def add_device(self, host: str, name: str = "", pixels: int | None = None,
+                   type: str = "wled", port: int | None = None, universe: int = 0) -> dict:
         host = host.strip()
-        dev_id = "wled-" + host.replace(".", "-").replace(":", "-")
-        px = int(pixels or self._pixels)
+        prefix = "artnet" if type == "artnet" else "wled"
+        dev_id = f"{prefix}-" + host.replace(".", "-").replace(":", "-")
         self.remove_device(dev_id)  # bestehendes gleiches Gerät ersetzen
-        entry = {"id": dev_id, "name": name.strip() or host, "host": host, "pixels": px, "port": int(port)}
+        entry = {
+            "id": dev_id, "type": type, "name": name.strip() or host, "host": host,
+            "pixels": int(pixels or self._pixels),
+            "port": int(port if port is not None else (6454 if type == "artnet" else 4048)),
+        }
+        if type == "artnet":
+            entry["universe"] = int(universe)
         self.devices.append(entry)
-        self.router.add(WledOutput(dev_id, entry["name"], host, px, int(port)))
+        self.router.add(self._make_output(entry))
         save_devices(self._devices_path, self.devices)
         self._update_fixtures()
         return entry
@@ -261,6 +282,30 @@ class AppState:
 
     def _update_fixtures(self) -> None:
         self.show.fixtures = len(self.devices) or self.settings.fixtures
+
+    # ── Licht-Pult: Trigger einer Button/Fader-Aktion ──
+    async def console_trigger(self, action: dict) -> bool:
+        kind = action.get("type")
+        if kind == "config":
+            return bool(self.update_config({action["key"]: action["value"]}))
+        if kind == "brightness":
+            self.update_config({"brightness": float(action["value"])}); return True
+        if kind == "base_hue":
+            self.show.set_base_hue(float(action["value"])); return True
+        if kind == "player":
+            return await self.player_command(action.get("cmd", ""), action.get("value"))
+        if kind == "ha":
+            svc = action.get("service", "toggle")
+            eid = action.get("entity_id", "")
+            if svc == "toggle":
+                return await self.ha.toggle(eid)
+            if svc == "turn_on":
+                return await self.ha.turn_on(eid)
+            if svc == "turn_off":
+                return await self.ha.turn_off(eid)
+            return await self.ha.call_service(action.get("domain", "homeassistant"), svc,
+                                              {"entity_id": eid} if eid else None)
+        return False
 
     async def player_command(self, action: str, value: float | None = None) -> bool:
         """Playback-Steuerung — bevorzugt über die aktive SendSpin-Quelle, sonst MASS."""

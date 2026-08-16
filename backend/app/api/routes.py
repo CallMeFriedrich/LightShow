@@ -32,7 +32,17 @@ class AddDevice(BaseModel):
     host: str
     name: str = ""
     pixels: int | None = None
-    port: int = 4048
+    type: str = "wled"          # wled | artnet
+    port: int | None = None
+    universe: int = 0
+
+
+class ConsoleLayout(BaseModel):
+    layout: dict
+
+
+class Action(BaseModel):
+    action: dict
 
 
 def build_router() -> APIRouter:
@@ -93,12 +103,35 @@ def build_router() -> APIRouter:
     async def add_device(body: AddDevice, request: Request):
         if not body.host.strip():
             raise HTTPException(status_code=400, detail="host fehlt")
-        entry = state(request).add_device(body.host, body.name, body.pixels, body.port)
+        entry = state(request).add_device(body.host, body.name, body.pixels,
+                                          body.type, body.port, body.universe)
         return {"device": entry, "devices": state(request).list_devices()}
 
     @router.delete("/devices/{device_id}")
     async def remove_device(device_id: str, request: Request):
         ok = state(request).remove_device(device_id)
         return {"ok": ok, "devices": state(request).list_devices()}
+
+    # ── Licht-Pult (Interface 2) ──
+    @router.get("/console")
+    async def console_get(request: Request):
+        return state(request).console.get()
+
+    @router.post("/console")
+    async def console_set(body: ConsoleLayout, request: Request):
+        return state(request).console.set(body.layout)
+
+    @router.post("/console/undo")
+    async def console_undo(request: Request):
+        return state(request).console.undo()
+
+    @router.post("/console/redo")
+    async def console_redo(request: Request):
+        return state(request).console.redo()
+
+    @router.post("/console/trigger")
+    async def console_trigger(body: Action, request: Request):
+        ok = await state(request).console_trigger(body.action)
+        return {"ok": ok}
 
     return router
