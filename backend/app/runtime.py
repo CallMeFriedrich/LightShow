@@ -49,11 +49,12 @@ class AppState:
         self.router = OutputRouter()
         self.preview = VirtualOutput(pixels=pixels)
         self.router.add(self.preview)
-        for node in self.settings.wled_nodes:
+        wled_nodes = self.settings.all_wled_nodes()
+        for node in wled_nodes:
             self.router.add(
                 WledOutput(node.id, node.name or node.id, node.host, node.pixels, node.port)
             )
-        fixtures = len(self.settings.wled_nodes) or self.settings.fixtures
+        fixtures = len(wled_nodes) or self.settings.fixtures
         self.show = ShowEngine(self.show_cfg, pixels=pixels, fixtures=fixtures)
 
         analysis_rate = self.settings.audio_sample_rate / self.settings.audio_block_size

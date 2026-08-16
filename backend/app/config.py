@@ -70,7 +70,20 @@ class Settings(BaseSettings):
     # Setup: 2 Strips à 480 LEDs (gespiegelt, mit Strobe-Alternation).
     led_count: int = 480
     fixtures: int = 2
+    # Einfachster Weg, WLED anzubinden: IP(s) kommagetrennt, je `wled_pixels` LEDs.
+    wled_hosts: str = ""          # z. B. "10.10.1.50,10.10.1.51"
+    wled_pixels: int = 480        # LEDs pro Host aus wled_hosts
+    # Fortgeschritten (überschreibt nichts, wird zusätzlich genutzt): volle JSON-Liste.
     wled_nodes: list[WledNode] = Field(default_factory=list)
+
+    def all_wled_nodes(self) -> list[WledNode]:
+        """WLED-Knoten aus der einfachen Host-Liste + der JSON-Liste zusammenführen."""
+        nodes = list(self.wled_nodes)
+        for i, host in enumerate(h.strip() for h in self.wled_hosts.split(",")):
+            if host:
+                nodes.append(WledNode(id=f"wled{i + 1}", name=f"WLED {i + 1}",
+                                      host=host, pixels=self.wled_pixels))
+        return nodes
 
     # Integrationen (Slice 2/3)
     mass_url: str = ""          # z. B. http://192.168.1.10:8095
