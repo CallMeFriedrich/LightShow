@@ -1,28 +1,24 @@
 """SendSpin-Audio-Capture (natives Music-Assistant-Protokoll).
 
-Setzt auf die offizielle Bibliothek ``aiosendspin`` auf, die den kompletten
-schweren Teil erledigt: Noise-``KKpsk2``-Handshake, WebSocket-Framing,
-Clock-Sync und **Codec-Decoding** (FLAC/PCM → rohes PCM). Wir registrieren uns
-als **Player** und erhalten dekodierte PCM-Chunks per Callback, die wir in die
-Analyse-Pipeline schieben.
+Setzt auf die offizielle Bibliothek ``aiosendspin`` auf. **Wichtig:** Die
+Version muss zur MASS-Version passen — MASS 2.9.x bündelt ``aiosendspin 6.0.5``.
+In 6.0.5 ist der Client bewusst einfach gehalten (noch **ohne** Noise/Pairing):
+``client_id`` ist ein simpler, stabiler String; wir registrieren uns als
+**Player** und bekommen dekodierte PCM-Chunks per Callback in die Analyse.
 
-Unpaired-Betrieb: ``InMemoryClientPairingStore`` liefert die Sentinel-PSK, ein
-Client mit ``trust_level='none'`` darf die ``playback``-Aktivität und damit den
-Audio-Stream empfangen — **kein PIN-Pairing nötig**.
+Wir bieten **PCM** an → MASS streamt uns rohes PCM (kein Decode/av nötig).
 
 Zwei Modi:
-* ``listen``  — wir werben per mDNS (`_sendspin._tcp.local.`), MASS verbindet sich
-  zu uns (Standard-Discovery, wie bei anderen SendSpin-Playern).
+* ``listen``  — wir werben per mDNS, MASS verbindet sich zu uns (Standard-Discovery,
+  funktioniert, wenn der Host direkt im LAN hängt — z. B. Linux-VM, nicht WSL-NAT).
 * ``connect`` — wir wählen den Server aktiv an (``ws://host:port/sendspin``).
-
-Hinweis: v0.1, nur gegen die Bibliothek getestet (kein Live-Server hier). Viel
-Logging zur Iteration an der echten MASS-Instanz.
 """
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
+import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -44,101 +40,71 @@ class SendSpinSource(AudioSource):
     def __init__(self, settings: Settings) -> None:
         self.s = settings
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=64)
-        self._key_path = Path(settings.data_dir) / "sendspin_key"
+        self._id_path = Path(settings.data_dir) / "sendspin_id"
 
-    # ── Identity-Persistenz (rohe 32-Byte X25519-Privatkey-Datei) ──
-    def _load_identity(self):
-        from aiosendspin.noise.keys import Identity
-
-        if self._key_path.is_file():
-            try:
-                return Identity.from_private_bytes(self._key_path.read_bytes())
-            except Exception:  # noqa: BLE001
-                log.warning("SendSpin-Key unlesbar — erzeuge neuen")
-        ident = Identity.generate()
-        self._key_path.parent.mkdir(parents=True, exist_ok=True)
-        self._key_path.write_bytes(ident.private_bytes)
-        return ident
+    # ── stabile client_id (persistiert, damit MASS uns wiedererkennt) ──
+    def _client_id(self) -> str:
+        if self._id_path.is_file():
+            cid = self._id_path.read_text().strip()
+            if cid:
+                return cid
+        cid = f"lightshow-{uuid.uuid4().hex[:12]}"
+        self._id_path.parent.mkdir(parents=True, exist_ok=True)
+        self._id_path.write_text(cid)
+        return cid
 
     def _player_support(self):
         from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
         from aiosendspin.models.types import AudioCodec
 
         sr, ch = self.s.audio_sample_rate, self.s.audio_channels
-        # PCM bevorzugt (kein Decode nötig), FLAC als Fallback.
-        formats = [
-            SupportedAudioFormat(codec=AudioCodec.PCM, channels=ch, sample_rate=sr, bit_depth=16),
-            SupportedAudioFormat(codec=AudioCodec.FLAC, channels=ch, sample_rate=sr, bit_depth=16),
-        ]
+        # Nur PCM anbieten → MASS transkodiert serverseitig, wir bekommen rohes PCM.
         return ClientHelloPlayerSupport(
-            supported_formats=formats,
+            supported_formats=[
+                SupportedAudioFormat(codec=AudioCodec.PCM, channels=ch, sample_rate=sr, bit_depth=16),
+            ],
             buffer_capacity=2_000_000,
             supported_commands=[],
         )
 
     def _on_audio(self, timestamp_us: int, pcm: bytes, fmt) -> None:
-        """SDK-Callback (läuft im Event-Loop): dekodiertes PCM einreihen."""
+        """SDK-Callback (Event-Loop): dekodiertes PCM einreihen (Drop-Oldest)."""
+        item = (pcm, fmt.pcm_format.sample_rate, fmt.pcm_format.channels, fmt.pcm_format.bit_depth)
         try:
-            self._queue.put_nowait((pcm, fmt.pcm_format.sample_rate,
-                                    fmt.pcm_format.channels, fmt.pcm_format.bit_depth))
+            self._queue.put_nowait(item)
         except asyncio.QueueFull:
-            try:  # Drop-Oldest, damit die Analyse nie blockiert
+            with contextlib.suppress(Exception):
                 self._queue.get_nowait()
-                self._queue.put_nowait((pcm, fmt.pcm_format.sample_rate,
-                                        fmt.pcm_format.channels, fmt.pcm_format.bit_depth))
-            except Exception:  # noqa: BLE001
-                pass
+                self._queue.put_nowait(item)
 
     def _on_disconnect(self) -> None:
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             self._queue.put_nowait(None)  # Sentinel → frames() endet → Supervisor-Restart
-        except asyncio.QueueFull:
-            pass
 
     def _build_client(self):
         from aiosendspin.client import SendspinClient
         from aiosendspin.models.types import Roles
-        from aiosendspin.noise.session import NoiseCipherSuite
-        from aiosendspin.noise.trust_store import InMemoryClientPairingStore
 
-        identity = self._load_identity()
-        self._store = InMemoryClientPairingStore()
         client = SendspinClient(
-            identity,
+            self._client_id(),
             self.s.sendspin_name,
             roles=[Roles.PLAYER],
-            pairing_store=self._store,
             player_support=self._player_support(),
-            cipher_suite=NoiseCipherSuite.CHACHAPOLY,
         )
         client.add_audio_chunk_listener(self._on_audio)
         client.add_disconnect_listener(self._on_disconnect)
         return client
 
-    async def _enable_unpaired(self) -> None:
-        """Unpaired Access aktivieren — sonst lehnt der Server (MASS) uns ab.
-
-        Default der Lib ist ``unpaired_access_enabled=False``; wir melden dann im
-        client/hello „unpaired nicht erlaubt", und MASS kann uns ohne Pairing
-        nicht für Playback zulassen (server/connection.py: enabled AND trusted).
-        """
-        import dataclasses
-
-        cfg = await self._store.get_pairing_config()
-        cfg = dataclasses.replace(cfg, unpaired_access_enabled=True)
-        await self._store.store_pairing_config(cfg)
-
     async def frames(self) -> AsyncIterator[PCMFrame]:
         client = self._build_client()
-        await self._enable_unpaired()
         try:
             stopper = await self._start(client)
         except Exception as exc:  # noqa: BLE001 — sauber statt Riesen-Traceback
             log.warning("SendSpin-Verbindung fehlgeschlagen (%s) — Reconnect via Supervisor", exc)
             with contextlib.suppress(Exception):
-                await client.disconnect()  # schließt die aiohttp-Session
+                await client.disconnect()
             return
-        log.info("SendSpin-Client aktiv (mode=%s, id=%s)", self.s.sendspin_mode, client.identity.peer_id[:12])
+        log.info("SendSpin-Client aktiv (mode=%s, id=%s)", self.s.sendspin_mode, self._client_id())
         try:
             while True:
                 item = await self._queue.get()
@@ -165,7 +131,6 @@ class SendSpinSource(AudioSource):
 
             return stop
 
-        # listen-Modus: mDNS-Advertising, MASS verbindet sich zu uns.
         from aiosendspin.client import ClientListener
 
         port = self.s.sendspin_port or _LISTEN_PORT
@@ -174,7 +139,7 @@ class SendSpinSource(AudioSource):
             await client.attach_websocket(ws)
 
         listener = ClientListener(
-            client_id=client.identity.peer_id,
+            client_id=self._client_id(),
             on_connection=on_conn,
             port=port,
             client_name=self.s.sendspin_name,
