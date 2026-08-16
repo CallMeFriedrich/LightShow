@@ -102,11 +102,12 @@ class SendSpinSource(AudioSource):
         from aiosendspin.noise.trust_store import InMemoryClientPairingStore
 
         identity = self._load_identity()
+        self._store = InMemoryClientPairingStore()
         client = SendspinClient(
             identity,
             self.s.sendspin_name,
             roles=[Roles.PLAYER],
-            pairing_store=InMemoryClientPairingStore(),
+            pairing_store=self._store,
             player_support=self._player_support(),
             cipher_suite=NoiseCipherSuite.CHACHAPOLY,
         )
@@ -114,8 +115,22 @@ class SendSpinSource(AudioSource):
         client.add_disconnect_listener(self._on_disconnect)
         return client
 
+    async def _enable_unpaired(self) -> None:
+        """Unpaired Access aktivieren — sonst lehnt der Server (MASS) uns ab.
+
+        Default der Lib ist ``unpaired_access_enabled=False``; wir melden dann im
+        client/hello „unpaired nicht erlaubt", und MASS kann uns ohne Pairing
+        nicht für Playback zulassen (server/connection.py: enabled AND trusted).
+        """
+        import dataclasses
+
+        cfg = await self._store.get_pairing_config()
+        cfg = dataclasses.replace(cfg, unpaired_access_enabled=True)
+        await self._store.store_pairing_config(cfg)
+
     async def frames(self) -> AsyncIterator[PCMFrame]:
         client = self._build_client()
+        await self._enable_unpaired()
         try:
             stopper = await self._start(client)
         except Exception as exc:  # noqa: BLE001 — sauber statt Riesen-Traceback
