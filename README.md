@@ -85,5 +85,6 @@ frontend/dashboard/   Vue-3-Dashboard (Interface 1)
 
 - **Slice 1 ✓:** Audio → Show-Engine (Regelwerk) → WLED + Dashboard.
 - **Slice 2 ✓:** Music Assistant (Player, Cover-Farbe), SQLite-Persistenz + Look-ahead/Drops.
-- **Slice 3:** Digitales Licht-Pult (Grid/Fader/XY, Undo/Redo), Home Assistant, ArtNet/DMX.
+- **Slice 3 ✓:** Digitales Licht-Pult (Grid/Buttons/Fader/XY, Undo/Redo, persistiert),
+  Home Assistant (Switches/Nebel via Token), ArtNet/DMX-Output, WLED-Verwaltung im UI.
 - **Slice 4:** Härtung, Tests, Release.
