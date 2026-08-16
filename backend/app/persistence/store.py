@@ -10,6 +10,7 @@ Wachstum ist unkritisch (nur wenige Drops je Song); zusätzlich pro Track auf
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -31,6 +32,65 @@ class DropStore:
                    PRIMARY KEY (track_id, position)
                )"""
         )
+        # Gelerntes Energie-Profil je Track (1 Wert/Sekunde), über Wiedergaben gemittelt.
+        self.db.execute(
+            """CREATE TABLE IF NOT EXISTS track_profile (
+                   track_id TEXT PRIMARY KEY,
+                   plays    INTEGER NOT NULL DEFAULT 1,
+                   energy   TEXT NOT NULL,
+                   updated  REAL NOT NULL
+               )"""
+        )
+        self.db.commit()
+
+    # ── Energie-Profil (Song-Lernen) ──
+    def get_profile(self, track_id: str) -> list[float]:
+        if not track_id:
+            return []
+        row = self.db.execute(
+            "SELECT energy FROM track_profile WHERE track_id=?", (track_id,)
+        ).fetchone()
+        if not row:
+            return []
+        try:
+            return [float(x) for x in json.loads(row[0])]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def save_profile(self, track_id: str, energies: list[float]) -> None:
+        """Neues Profil elementweise mit dem bestehenden mitteln (gewichtet nach plays)."""
+        if not track_id or not energies:
+            return
+        row = self.db.execute(
+            "SELECT plays, energy FROM track_profile WHERE track_id=?", (track_id,)
+        ).fetchone()
+        now = time.time()
+        if row:
+            plays = int(row[0])
+            try:
+                old = [float(x) for x in json.loads(row[1])]
+            except Exception:  # noqa: BLE001
+                old = []
+            n = max(len(old), len(energies))
+            merged = []
+            for i in range(n):
+                o = old[i] if i < len(old) else None
+                v = energies[i] if i < len(energies) else None
+                if o is None:
+                    merged.append(round(v, 4))
+                elif v is None:
+                    merged.append(round(o, 4))
+                else:
+                    merged.append(round((o * plays + v) / (plays + 1), 4))
+            self.db.execute(
+                "UPDATE track_profile SET plays=plays+1, energy=?, updated=? WHERE track_id=?",
+                (json.dumps(merged), now, track_id),
+            )
+        else:
+            self.db.execute(
+                "INSERT INTO track_profile(track_id, plays, energy, updated) VALUES (?,1,?,?)",
+                (track_id, json.dumps([round(e, 4) for e in energies]), now),
+            )
         self.db.commit()
 
     def get_drops(self, track_id: str) -> list[float]:

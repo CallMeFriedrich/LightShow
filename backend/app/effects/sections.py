@@ -30,7 +30,8 @@ class SectionDetector:
         self._last_drop_t = -999.0
         self._rising_since: float | None = None
 
-    def update(self, energy: float, drop_now: bool, pos: float | None, dt: float) -> tuple[str, float]:
+    def update(self, energy: float, drop_now: bool, pos: float | None, dt: float,
+               future_energy: float | None = None) -> tuple[str, float]:
         dt = max(1e-3, min(0.2, dt))
         self._t += dt
         a_base = 1.0 - math.exp(-dt / 12.0)
@@ -53,6 +54,13 @@ class SectionDetector:
             self._rising_since = None
         rising_dur = (self._t - self._rising_since) if self._rising_since is not None else 0.0
 
+        # Gelerntes Profil: kommt in ~4 s deutlich mehr Energie? → vorausschauender Build-up.
+        learned_build = (
+            future_energy is not None
+            and future_energy > 0.45
+            and (future_energy - self._e_fast) > 0.12
+        )
+
         # ── Klassifikation (Priorität von oben) ──
         if pos is not None and pos > 0.90 and self._e_fast < self._e_base * 0.9:
             sec = "outro"
@@ -62,7 +70,7 @@ class SectionDetector:
             sec = "drop"
         elif self._e_base > 0.4 and self._e_fast < self._e_base * 0.6:
             sec = "break"
-        elif rising_dur > 1.5 and self._e_fast > 0.35:
+        elif learned_build or (rising_dur > 1.5 and self._e_fast > 0.35):
             sec = "build"
         else:
             sec = "verse"

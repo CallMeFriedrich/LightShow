@@ -93,6 +93,9 @@ class AppState:
         self._player_elapsed = 0.0
         self.store = DropStore(f"{self.settings.data_dir}/lightshow.sqlite")
         self.lookahead = LookAhead()
+        self._track_profile: list[float] = []          # gelerntes Energie-Profil (1/s)
+        self._prof_acc: dict[int, list] = {}           # Aufzeichnung laufender Track {sec:[sum,count]}
+        self._prof_track_id = ""
         self._http: httpx.AsyncClient | None = None
         self._last_cover_url = ""
         self._source = None  # aktive AudioSource (für Steuerung, z. B. SendSpin)
@@ -127,8 +130,12 @@ class AppState:
             last = now
             a = self.latest_analysis
 
-            buildup, predicted = self._lookahead_step(now, a)
-            section, tension = self.sections.update(a.energy, a.drop_now, self._song_pos(now), dt)
+            elapsed = self._elapsed(now)
+            buildup, predicted = self._lookahead_step(a, elapsed)
+            future_e = self._profile_step(elapsed, a.energy)
+            dur = self.player.track.duration
+            pos = (elapsed / dur) if (elapsed is not None and dur > 0) else None
+            section, tension = self.sections.update(a.energy, a.drop_now, pos, dt, future_e)
             buf, fixture_gains = self.show.render(a, now, dt, buildup, predicted, section, tension)
             await self.router.broadcast(buf, fixture_gains)
 
@@ -137,24 +144,43 @@ class AppState:
                 self.bus.publish("render.preview", self.preview.as_hex())
                 self.bus.publish("show.status", self.show.status)
 
-    def _song_pos(self, now: float) -> float | None:
-        """Relative Position im Song [0,1] aus SendSpin elapsed/duration (oder None)."""
+    def _elapsed(self, now: float) -> float | None:
+        """Interpolierte Abspielposition in Sekunden (oder None wenn nicht spielend)."""
         p = self.player
-        dur = p.track.duration
-        if not (p.online and p.is_playing and dur > 0):
+        if not (p.online and p.is_playing and p.track.id):
             return None
-        elapsed = self._player_elapsed + (now - self._player_ts)
-        return max(0.0, min(1.0, elapsed / dur))
+        return self._player_elapsed + (now - self._player_ts)
 
-    def _lookahead_step(self, now: float, a: AnalysisFrame) -> tuple[float, bool]:
-        """Elapsed interpolieren, Realtime-Drops aufzeichnen, Build-up berechnen."""
-        if not (self.player.online and self.player.is_playing and self.player.track.id):
+    def _lookahead_step(self, a: AnalysisFrame, elapsed: float | None) -> tuple[float, bool]:
+        """Realtime-Drops aufzeichnen, Build-up aus bekannten Drops berechnen."""
+        if elapsed is None:
             return 0.0, False
-        elapsed = self._player_elapsed + (now - self._player_ts)
         if a.drop_now and self.lookahead.record_drop(elapsed):
-            tid = self.player.track.id
-            asyncio.create_task(asyncio.to_thread(self.store.add_drop, tid, elapsed))
+            asyncio.create_task(asyncio.to_thread(self.store.add_drop, self.player.track.id, elapsed))
         return self.lookahead.compute(elapsed)
+
+    def _profile_step(self, elapsed: float | None, energy: float) -> float | None:
+        """Energie/Sekunde des laufenden Tracks aufzeichnen; liefert gelernte Energie ~4 s voraus."""
+        if elapsed is None:
+            return None
+        sec = int(elapsed)
+        acc = self._prof_acc.get(sec)
+        if acc is None:
+            self._prof_acc[sec] = [energy, 1]
+        else:
+            acc[0] += energy
+            acc[1] += 1
+        idx = sec + 4
+        prof = self._track_profile
+        return prof[idx] if 0 <= idx < len(prof) else None
+
+    def _acc_to_list(self, acc: dict[int, list]) -> list[float]:
+        if not acc:
+            return []
+        out = [0.0] * (max(acc) + 1)
+        for sec, (s, c) in acc.items():
+            out[sec] = round(s / max(1, c), 4)
+        return out
 
     # ── MASS-Callback ──
     async def _on_player_state(self, state: PlayerState) -> None:
@@ -208,12 +234,19 @@ class AppState:
         tid = f"{p.track.artist}—{p.track.title}".strip("— ")
         if tid and tid != self.lookahead.track_id:
             p.track.id = tid
-            asyncio.create_task(self._reload_drops(tid))
+            asyncio.create_task(self._on_track_change(tid))
         self.bus.publish("player.state", p.to_dict())
 
-    async def _reload_drops(self, track_id: str) -> None:
-        drops = await asyncio.to_thread(self.store.get_drops, track_id)
-        self.lookahead.set_track(track_id, drops)
+    async def _on_track_change(self, new_tid: str) -> None:
+        # Alten Track lernen (Energie-Profil persistieren), dann neues Profil + Drops laden.
+        if self._prof_track_id and self._prof_acc:
+            await asyncio.to_thread(self.store.save_profile, self._prof_track_id,
+                                    self._acc_to_list(self._prof_acc))
+        self._prof_acc = {}
+        self._prof_track_id = new_tid
+        self._track_profile = await asyncio.to_thread(self.store.get_profile, new_tid)
+        drops = await asyncio.to_thread(self.store.get_drops, new_tid)
+        self.lookahead.set_track(new_tid, drops)
 
     def register_tasks(self) -> None:
         self.supervisor.register("audio", self._audio_task, restart=True)
@@ -232,6 +265,8 @@ class AppState:
         await self.ha.close()
         if self._http:
             await self._http.aclose()
+        if self._prof_track_id and self._prof_acc:  # laufenden Track noch lernen
+            self.store.save_profile(self._prof_track_id, self._acc_to_list(self._prof_acc))
         self.store.close()
 
     # ── Steuer-API (für REST/WS) ──
