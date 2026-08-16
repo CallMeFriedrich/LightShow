@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Vue
+node_modules/
+dist/
+.vite/
+# Eingebettetes Frontend-Build (wird im Docker-Build erzeugt)
+backend/app/web/
+
+# Environment / secrets
+.env
+.env.local
+
+# Runtime data (persisted state, private keys, DB, config) — nie committen
+data/*
+!data/.gitkeep
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.log

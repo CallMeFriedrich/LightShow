@@ -1,0 +1,13 @@
+services:
+  lightshow:
+    build: .
+    container_name: lightshow
+    restart: unless-stopped
+    # host-Netzwerk: nötig für UDP-Broadcast (WLED DDP / ArtNet) und
+    # Snapcast-Discovery im lokalen Netz. Unter WSL/Linux verfügbar.
+    network_mode: host
+    # .env muss existieren (einmalig: cp .env.example .env)
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
