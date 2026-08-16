@@ -141,7 +141,16 @@ class SendSpinSource(AudioSource):
         port = self.s.sendspin_port or _LISTEN_PORT
 
         async def on_conn(ws) -> None:
-            await client.attach_websocket(ws)
+            # WICHTIG: attach_websocket() blockiert NICHT — der Handler muss die
+            # Verbindung offen halten, bis sie schließt. Sonst schließt aiohttp den
+            # WebSocket sofort und MASS zeigt den Player als „nicht verfügbar".
+            closed = asyncio.Event()
+            remove = client.add_disconnect_listener(closed.set)
+            try:
+                await client.attach_websocket(ws)
+                await closed.wait()
+            finally:
+                remove()
 
         listener = ClientListener(
             client_id=self._client_id(),
