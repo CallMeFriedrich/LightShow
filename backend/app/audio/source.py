@@ -29,8 +29,12 @@ class AudioSource(abc.ABC):
         return None
 
 
-def build_source(settings: Settings) -> AudioSource:
-    """Factory: erzeugt die konfigurierte Quelle."""
+def build_source(settings: Settings, on_metadata=None) -> AudioSource:
+    """Factory: erzeugt die konfigurierte Quelle.
+
+    ``on_metadata`` (optional) erhält Player-Metadaten der Quelle (SendSpin liefert
+    Titel/Cover/Playback-State über denselben Kanal).
+    """
     kind = settings.audio_source
     if kind == "snapcast":
         from .snapcast import SnapcastSource
@@ -43,7 +47,7 @@ def build_source(settings: Settings) -> AudioSource:
     if kind == "sendspin":
         from .sendspin import SendSpinSource
 
-        return SendSpinSource(settings)
+        return SendSpinSource(settings, on_metadata=on_metadata)
     from .synthetic import SyntheticSource
 
     return SyntheticSource(settings)

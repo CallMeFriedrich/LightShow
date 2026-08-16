@@ -74,6 +74,7 @@ class Settings(BaseSettings):
 
     # Integrationen (Slice 2/3)
     mass_url: str = ""          # z. B. http://192.168.1.10:8095
+    mass_token: str = ""        # MASS-WS-Auth-Token; leer → MASS-WS-Client aus (SendSpin liefert Metadaten)
     mass_player_id: str = ""    # optional: bestimmten Player wählen (sonst aktiver)
     ha_url: str = ""
     ha_token: str = ""

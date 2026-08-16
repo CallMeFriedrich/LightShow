@@ -37,11 +37,12 @@ _CONNECT_PORT = 8927
 class SendSpinSource(AudioSource):
     name = "sendspin"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, on_metadata=None) -> None:
         self.s = settings
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         self._id_path = Path(settings.data_dir) / "sendspin_id"
         self._chunks = 0
+        self._on_metadata = on_metadata  # Callback(dict) für Player-Metadaten
 
     # ── stabile client_id (persistiert, damit MASS uns wiedererkennt) ──
     def _client_id(self) -> str:
@@ -71,9 +72,9 @@ class SendSpinSource(AudioSource):
     def _on_audio(self, timestamp_us: int, pcm: bytes, fmt) -> None:
         """SDK-Callback (Event-Loop): dekodiertes PCM einreihen (Drop-Oldest)."""
         self._chunks += 1
-        if self._chunks <= 3 or self._chunks % 400 == 0:
-            log.info("SendSpin Audio-Chunk #%d: %d Bytes %dHz/%dch/%dbit",
-                     self._chunks, len(pcm), fmt.pcm_format.sample_rate,
+        if self._chunks == 1:
+            log.info("SendSpin Audio-Stream aktiv: %d Bytes %dHz/%dch/%dbit",
+                     len(pcm), fmt.pcm_format.sample_rate,
                      fmt.pcm_format.channels, fmt.pcm_format.bit_depth)
         item = (pcm, fmt.pcm_format.sample_rate, fmt.pcm_format.channels, fmt.pcm_format.bit_depth)
         try:
@@ -91,19 +92,52 @@ class SendSpinSource(AudioSource):
         from aiosendspin.client import SendspinClient
         from aiosendspin.models.types import Roles
 
+        # PLAYER (Audio) + METADATA (Titel/Cover/Progress — braucht keine Support-Config).
         client = SendspinClient(
             self._client_id(),
             self.s.sendspin_name,
-            roles=[Roles.PLAYER],
+            roles=[Roles.PLAYER, Roles.METADATA],
             player_support=self._player_support(),
         )
         client.add_audio_chunk_listener(self._on_audio)
         client.add_disconnect_listener(self._on_disconnect)
-        # Diagnose: sehen, was MASS über SendSpin schickt.
-        client.add_stream_start_listener(lambda m: log.info("SendSpin stream/start empfangen: %r", m))
-        client.add_stream_end_listener(lambda r: log.info("SendSpin stream/end: %r", r))
-        client.add_metadata_listener(lambda p: log.info("SendSpin metadata empfangen"))
+        client.add_metadata_listener(self._on_metadata_msg)
+        client.add_group_update_listener(self._on_group_msg)
         return client
+
+    # ── Metadaten → Callback (Titel/Cover/Playback-State) ──
+    def _on_metadata_msg(self, payload) -> None:
+        meta = getattr(payload, "metadata", None)
+        if meta is None or self._on_metadata is None:
+            return
+        out: dict = {"online": True}
+        for src, dst in (("title", "title"), ("artist", "artist"), ("album", "album")):
+            val = getattr(meta, src, None)
+            if isinstance(val, str):
+                out[dst] = val
+        art = getattr(meta, "artwork_url", None)
+        if isinstance(art, str):
+            out["image_url"] = art
+        prog = getattr(meta, "progress", None)
+        if prog is not None and hasattr(prog, "track_progress"):
+            out["elapsed"] = prog.track_progress / 1000.0
+            out["duration"] = prog.track_duration / 1000.0
+            out["state"] = "playing" if getattr(prog, "playback_speed", 0) > 0 else "paused"
+        self._safe_meta(out)
+
+    def _on_group_msg(self, payload) -> None:
+        if self._on_metadata is None:
+            return
+        state = getattr(payload, "playback_state", None)
+        if state is not None:
+            name = getattr(state, "value", str(state))
+            self._safe_meta({"online": True, "state": "idle" if name == "stopped" else name})
+
+    def _safe_meta(self, out: dict) -> None:
+        try:
+            self._on_metadata(out)
+        except Exception:  # noqa: BLE001
+            log.debug("on_metadata-Callback-Fehler", exc_info=True)
 
     async def frames(self) -> AsyncIterator[PCMFrame]:
         client = self._build_client()

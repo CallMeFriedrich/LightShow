@@ -74,14 +74,16 @@ class AppState:
         self.lookahead = LookAhead()
         self._http: httpx.AsyncClient | None = None
         self._last_cover_url = ""
+        # MASS-WS-Client nur mit Token (die MASS-2.9-WS-API verlangt Auth). Ohne Token
+        # aus → kein Spam; Player-Metadaten kommen dann über SendSpin.
         self.mass = (
             MassClient(self.settings.mass_url, self.settings.mass_player_id, on_state=self._on_player_state)
-            if self.settings.mass_url else None
+            if (self.settings.mass_url and self.settings.mass_token) else None
         )
 
     # ── Tasks ──
     async def _audio_task(self) -> None:
-        source = build_source(self.settings)
+        source = build_source(self.settings, on_metadata=self._on_sendspin_meta)
         log.info("Audio-Quelle: %s", source.name)
         try:
             async for pcm in source.frames():
@@ -141,6 +143,43 @@ class AppState:
         if hue is not None:
             self.show.set_base_hue(hue)
             log.info("Album-Cover-Farbe → base_hue=%.3f", hue)
+
+    # ── SendSpin-Metadaten (Titel/Cover/State) → Player-Panel + Look-ahead ──
+    def _on_sendspin_meta(self, meta: dict) -> None:
+        """Sync-Callback aus dem SendSpin-Client (läuft im Event-Loop)."""
+        loop = asyncio.get_running_loop()
+        p = self.player
+        p.online = bool(meta.get("online", p.online))
+        if "state" in meta:
+            p.state = meta["state"]
+        if "artist" in meta:
+            p.track.artist = meta["artist"]
+        if "album" in meta:
+            p.track.album = meta["album"]
+        if "duration" in meta:
+            p.track.duration = meta["duration"]
+        if "elapsed" in meta:
+            p.elapsed = meta["elapsed"]
+            self._player_ts = loop.time()
+            self._player_elapsed = meta["elapsed"]
+        if "title" in meta:
+            p.track.title = meta["title"]
+        img = meta.get("image_url")
+        if img and img != self._last_cover_url:
+            self._last_cover_url = img
+            p.track.image_url = img
+            if self.show_cfg.album_art_color:
+                asyncio.create_task(self._apply_cover_hue(img))
+        # SendSpin liefert keine stabile Track-ID → Key aus Artist/Titel für Drops.
+        tid = f"{p.track.artist}—{p.track.title}".strip("— ")
+        if tid and tid != self.lookahead.track_id:
+            p.track.id = tid
+            asyncio.create_task(self._reload_drops(tid))
+        self.bus.publish("player.state", p.to_dict())
+
+    async def _reload_drops(self, track_id: str) -> None:
+        drops = await asyncio.to_thread(self.store.get_drops, track_id)
+        self.lookahead.set_track(track_id, drops)
 
     def register_tasks(self) -> None:
         self.supervisor.register("audio", self._audio_task, restart=True)
