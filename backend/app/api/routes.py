@@ -28,6 +28,13 @@ class Volume(BaseModel):
     value: float
 
 
+class AddDevice(BaseModel):
+    host: str
+    name: str = ""
+    pixels: int | None = None
+    port: int = 4048
+
+
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -76,5 +83,22 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"Unbekannte Aktion: {action}")
         ok = await state(request).player_command(action)
         return {"ok": ok}
+
+    # ── Geräte-Verwaltung (WLED) ──
+    @router.get("/devices")
+    async def devices(request: Request):
+        return {"devices": state(request).list_devices()}
+
+    @router.post("/devices")
+    async def add_device(body: AddDevice, request: Request):
+        if not body.host.strip():
+            raise HTTPException(status_code=400, detail="host fehlt")
+        entry = state(request).add_device(body.host, body.name, body.pixels, body.port)
+        return {"device": entry, "devices": state(request).list_devices()}
+
+    @router.delete("/devices/{device_id}")
+    async def remove_device(device_id: str, request: Request):
+        ok = state(request).remove_device(device_id)
+        return {"ok": ok, "devices": state(request).list_devices()}
 
     return router

@@ -31,6 +31,7 @@ from .integrations.music_assistant import MassClient
 from .output.base import OutputRouter
 from .output.virtual import VirtualOutput
 from .output.wled import WledOutput
+from .persistence.devices import load_devices, save_devices
 from .persistence.store import DropStore
 
 log = logging.getLogger(__name__)
@@ -49,12 +50,23 @@ class AppState:
         self.router = OutputRouter()
         self.preview = VirtualOutput(pixels=pixels)
         self.router.add(self.preview)
-        wled_nodes = self.settings.all_wled_nodes()
-        for node in wled_nodes:
-            self.router.add(
-                WledOutput(node.id, node.name or node.id, node.host, node.pixels, node.port)
-            )
-        fixtures = len(wled_nodes) or self.settings.fixtures
+        self._pixels = pixels
+
+        # Geräte: persistierte Liste (UI-verwaltet); Erstbefüllung aus ENV.
+        self._devices_path = f"{self.settings.data_dir}/devices.json"
+        self.devices = load_devices(self._devices_path)
+        if not self.devices:
+            self.devices = [
+                {"id": n.id, "name": n.name or n.id, "host": n.host, "pixels": n.pixels, "port": n.port}
+                for n in self.settings.all_wled_nodes()
+            ]
+            if self.devices:
+                save_devices(self._devices_path, self.devices)
+        for d in self.devices:
+            self.router.add(WledOutput(d["id"], d.get("name") or d["id"], d["host"],
+                                       int(d.get("pixels", pixels)), int(d.get("port", 4048))))
+
+        fixtures = len(self.devices) or self.settings.fixtures
         self.show = ShowEngine(self.show_cfg, pixels=pixels, fixtures=fixtures)
 
         analysis_rate = self.settings.audio_sample_rate / self.settings.audio_block_size
@@ -221,6 +233,34 @@ class AppState:
 
     def update_config(self, changes: dict) -> list[str]:
         return self.show_cfg.update(changes)
+
+    # ── Geräte-Verwaltung (WLED) ──
+    def list_devices(self) -> list[dict]:
+        online = {d.id: d.online for d in self.router.devices}
+        return [{**d, "online": online.get(d["id"])} for d in self.devices]
+
+    def add_device(self, host: str, name: str = "", pixels: int | None = None, port: int = 4048) -> dict:
+        host = host.strip()
+        dev_id = "wled-" + host.replace(".", "-").replace(":", "-")
+        px = int(pixels or self._pixels)
+        self.remove_device(dev_id)  # bestehendes gleiches Gerät ersetzen
+        entry = {"id": dev_id, "name": name.strip() or host, "host": host, "pixels": px, "port": int(port)}
+        self.devices.append(entry)
+        self.router.add(WledOutput(dev_id, entry["name"], host, px, int(port)))
+        save_devices(self._devices_path, self.devices)
+        self._update_fixtures()
+        return entry
+
+    def remove_device(self, dev_id: str) -> bool:
+        before = len(self.devices)
+        self.devices = [d for d in self.devices if d["id"] != dev_id]
+        self.router.remove(dev_id)
+        save_devices(self._devices_path, self.devices)
+        self._update_fixtures()
+        return len(self.devices) < before
+
+    def _update_fixtures(self) -> None:
+        self.show.fixtures = len(self.devices) or self.settings.fixtures
 
     async def player_command(self, action: str, value: float | None = None) -> bool:
         """Playback-Steuerung — bevorzugt über die aktive SendSpin-Quelle, sonst MASS."""

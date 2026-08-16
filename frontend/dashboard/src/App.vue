@@ -54,6 +54,25 @@ async function patch(changes) {
 async function playerCmd(action) {
   await fetch(`/api/player/${action}`, { method: "POST" });
 }
+
+const devices = ref([]);
+const newDev = reactive({ host: "", name: "", pixels: 480 });
+async function loadDevices() {
+  devices.value = (await (await fetch("/api/devices")).json()).devices || [];
+}
+async function addDevice() {
+  if (!newDev.host.trim()) return;
+  const r = await fetch("/api/devices", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host: newDev.host, name: newDev.name, pixels: newDev.pixels }),
+  });
+  devices.value = (await r.json()).devices || [];
+  newDev.host = ""; newDev.name = "";
+}
+async function removeDevice(id) {
+  const r = await fetch(`/api/devices/${id}`, { method: "DELETE" });
+  devices.value = (await r.json()).devices || [];
+}
 const fmtTime = (s) => {
   s = Math.max(0, Math.floor(s || 0));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -64,7 +83,7 @@ function animate() {
   dropFlash.value *= 0.9;
   raf = requestAnimationFrame(animate);
 }
-onMounted(() => { connect(); loadConfig(); animate(); });
+onMounted(() => { connect(); loadConfig(); loadDevices(); animate(); });
 onUnmounted(() => { clearTimeout(reconnectTimer); cancelAnimationFrame(raf); ws && ws.close(); });
 
 const pct = (v, s = 1) => Math.min(100, v * 100 * s);
@@ -241,6 +260,36 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
           <input type="checkbox" v-model="cfg.strobes" @change="patch({ strobes: cfg.strobes })"
                  class="accent-fuchsia-500" /> Strobes
         </label>
+      </div>
+    </div>
+
+    <!-- WLED-Geräte -->
+    <div class="bg-white/5 rounded-xl p-4 mt-4">
+      <div class="text-xs uppercase text-gray-400 mb-3">WLED-Geräte</div>
+      <div v-if="devices.length" class="space-y-2 mb-3">
+        <div v-for="d in devices" :key="d.id" class="flex items-center gap-3 text-sm">
+          <span class="w-2 h-2 rounded-full flex-shrink-0"
+                :class="d.id==='virtual' ? 'bg-gray-500' : (d.online===false ? 'bg-red-500' : 'bg-emerald-400')"></span>
+          <span class="font-medium">{{ d.name }}</span>
+          <span class="text-gray-400 font-mono text-xs">{{ d.host || "Preview" }}</span>
+          <span v-if="d.pixels" class="text-gray-500 text-xs">· {{ d.pixels }} px</span>
+          <button v-if="d.host" @click="removeDevice(d.id)"
+                  class="ml-auto text-xs px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/40">Entfernen</button>
+        </div>
+      </div>
+      <div v-else class="text-sm text-gray-500 mb-3">Noch keine WLED-Geräte — nur virtueller Preview.</div>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="text-xs text-gray-400">IP-Adresse
+          <input v-model="newDev.host" placeholder="10.10.1.50"
+                 class="block mt-1 px-2 py-1 rounded bg-black/40 text-sm w-40 font-mono" /></label>
+        <label class="text-xs text-gray-400">Name
+          <input v-model="newDev.name" placeholder="Links"
+                 class="block mt-1 px-2 py-1 rounded bg-black/40 text-sm w-28" /></label>
+        <label class="text-xs text-gray-400">LEDs
+          <input v-model.number="newDev.pixels" type="number"
+                 class="block mt-1 px-2 py-1 rounded bg-black/40 text-sm w-20" /></label>
+        <button @click="addDevice"
+                class="px-4 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-sm font-medium">Hinzufügen</button>
       </div>
     </div>
 
