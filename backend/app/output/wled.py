@@ -25,8 +25,8 @@ _MAX_PIXELS_PER_PACKET = 480  # 480 * 3 = 1440 Byte Nutzlast
 
 
 class WledOutput(OutputDevice):
-    def __init__(self, device_id: str, name: str, host: str, pixels: int, port: int = _DDP_PORT) -> None:
-        super().__init__(device_id, name, pixels)
+    def __init__(self, device_id: str, name: str, host: str, pixels: int, port: int = _DDP_PORT, **kw) -> None:
+        super().__init__(device_id, name, pixels, **kw)
         self.host = host
         self.port = port
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

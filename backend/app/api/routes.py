@@ -35,6 +35,15 @@ class AddDevice(BaseModel):
     type: str = "wled"          # wled | artnet
     port: int | None = None
     universe: int = 0
+    reverse: bool = False        # Streifen gespiegelt
+    brightness: float = 1.0      # Per-Fixture-Dimmer
+    cstart: float = 0.0          # Canvas-Bereichsanfang (0..1)
+    cend: float = 1.0            # Canvas-Bereichsende (0..1)
+
+
+class TestPattern(BaseModel):
+    pattern: str = "rainbow"     # rainbow | solid | chase | off
+    seconds: float = 6.0
 
 
 class ConsoleLayout(BaseModel):
@@ -103,9 +112,15 @@ def build_router() -> APIRouter:
     async def add_device(body: AddDevice, request: Request):
         if not body.host.strip():
             raise HTTPException(status_code=400, detail="host fehlt")
-        entry = state(request).add_device(body.host, body.name, body.pixels,
-                                          body.type, body.port, body.universe)
+        entry = state(request).add_device(
+            body.host, body.name, body.pixels, body.type, body.port, body.universe,
+            body.reverse, body.brightness, body.cstart, body.cend)
         return {"device": entry, "devices": state(request).list_devices()}
+
+    @router.post("/devices/test")
+    async def devices_test(body: TestPattern, request: Request):
+        state(request).run_test_pattern(body.pattern, body.seconds)
+        return {"ok": True}
 
     @router.delete("/devices/{device_id}")
     async def remove_device(device_id: str, request: Request):

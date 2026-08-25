@@ -32,8 +32,8 @@ def _artdmx(universe: int, data: bytes, seq: int) -> bytes:
 
 class ArtnetOutput(OutputDevice):
     def __init__(self, device_id: str, name: str, host: str, pixels: int,
-                 port: int = _ARTNET_PORT, universe: int = 0) -> None:
-        super().__init__(device_id, name, pixels)
+                 port: int = _ARTNET_PORT, universe: int = 0, **kw) -> None:
+        super().__init__(device_id, name, pixels, **kw)
         self.host = host
         self.port = port
         self.universe = universe

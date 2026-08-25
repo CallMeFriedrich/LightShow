@@ -43,11 +43,39 @@ class OutputDevice(abc.ABC):
     #: True für physische Fixtures (WLED/ArtNet), auf die Strobe-Alternation wirkt.
     is_fixture: bool = True
 
-    def __init__(self, device_id: str, name: str, pixels: int) -> None:
+    def __init__(self, device_id: str, name: str, pixels: int, *,
+                 cstart: float = 0.0, cend: float = 1.0, reverse: bool = False,
+                 brightness: float = 1.0, gamma: float = 2.2) -> None:
         self.id = device_id
         self.name = name
         self.pixels = pixels
         self.online = True
+        # Per-Fixture-Mapping (Idee aus alter Config): Canvas-Bereich [cstart,cend],
+        # optional gespiegelt, eigener Dimmer + Gamma (perzeptuell korrekt).
+        self.cstart = max(0.0, min(1.0, cstart))
+        self.cend = max(self.cstart + 0.01, min(1.0, cend))
+        self.reverse = bool(reverse)
+        self.brightness = float(brightness)
+        self.gamma = float(gamma)
+
+    def map_frame(self, frame: "FrameBuffer") -> np.ndarray:
+        """Canvas-Bereich → auf Pixelzahl skalieren → Reverse → Dimmer × Gamma."""
+        w = frame.pixels
+        a, b = int(self.cstart * w), int(self.cend * w)
+        region = frame.data[a:b] if b > a else frame.data
+        rw = region.shape[0]
+        if rw == self.pixels:
+            out = region
+        else:
+            idx = np.clip(np.arange(self.pixels) * rw // max(1, self.pixels), 0, rw - 1)
+            out = region[idx]
+        if self.reverse:
+            out = out[::-1]
+        f = out.astype(np.float32) / 255.0
+        f *= frame.brightness * self.brightness
+        if self.gamma and abs(self.gamma - 1.0) > 1e-3:
+            np.power(np.clip(f, 0.0, 1.0), self.gamma, out=f)
+        return np.ascontiguousarray(np.clip(f * 255.0, 0, 255).astype(np.uint8))
 
     @abc.abstractmethod
     async def send(self, rgb: np.ndarray) -> None:
@@ -83,7 +111,8 @@ class OutputRouter:
         fx_index = 0
         for dev in self._devices.values():
             try:
-                rgb = frame.resampled(dev.pixels)
+                # Fixtures: volles Mapping (Bereich/Reverse/Gamma). Preview: volle Canvas.
+                rgb = dev.map_frame(frame) if dev.is_fixture else frame.resampled(dev.pixels)
                 if dev.is_fixture and fixture_gains:
                     gain = fixture_gains[fx_index % len(fixture_gains)]
                     fx_index += 1

@@ -30,8 +30,11 @@ from .integrations.home_assistant import HAClient
 from .integrations.lookahead import LookAhead, derive_drops
 from .integrations.models import PlayerState
 from .integrations.music_assistant import MassClient
+import numpy as np
+
+from .effects.base import hsv_to_rgb
 from .output.artnet import ArtnetOutput
-from .output.base import OutputRouter
+from .output.base import FrameBuffer, OutputRouter
 from .output.virtual import VirtualOutput
 from .output.wled import WledOutput
 from .persistence.console import ConsoleManager
@@ -98,6 +101,8 @@ class AppState:
         self._prof_track_id = ""
         self._next_drop_s: float | None = None         # Sekunden bis nächstem gelernten Drop
         self._coverage = 0.0                           # wie viel der Songstruktur gelernt ist
+        self._test_pattern: str | None = None          # Test-Pattern (Verkabelungs-Check)
+        self._test_until = 0.0
         self._http: httpx.AsyncClient | None = None
         self._last_cover_url = ""
         self._source = None  # aktive AudioSource (für Steuerung, z. B. SendSpin)
@@ -132,6 +137,16 @@ class AppState:
             last = now
             if dt > 0.3:  # Watchdog: ein Stall friert den Streifen ein (Idee aus altem Code)
                 log.warning("Frame-Stall %.2fs — Render-Loop hängt kurz", dt)
+
+            # Test-Pattern (Verkabelungs-Check) hat Vorrang vor der Show.
+            if self._test_pattern and now < self._test_until:
+                await self.router.broadcast(self._test_frame(now))
+                self._preview_decimator = (self._preview_decimator + 1) % 4
+                if self._preview_decimator == 0:
+                    self.bus.publish("render.preview", self.preview.as_hex())
+                continue
+            self._test_pattern = None
+
             a = self.latest_analysis
 
             elapsed = self._elapsed(now)
@@ -304,20 +319,56 @@ class AppState:
     def update_config(self, changes: dict) -> list[str]:
         return self.show_cfg.update(changes)
 
+    # ── Test-Patterns (Verkabelung/Ausrichtung prüfen, Idee aus alter patterns.py) ──
+    def run_test_pattern(self, pattern: str, seconds: float) -> None:
+        self._test_pattern = pattern if pattern in ("rainbow", "solid", "chase", "off") else "rainbow"
+        try:
+            self._test_until = asyncio.get_running_loop().time() + max(0.5, min(120.0, float(seconds)))
+        except RuntimeError:
+            self._test_until = 0.0
+
+    def _test_frame(self, now: float) -> FrameBuffer:
+        w = self._pixels
+        fb = FrameBuffer(w)
+        fb.brightness = self.show_cfg.brightness
+        p = self._test_pattern
+        if p == "solid":
+            fb.data[:] = 255
+        elif p == "chase":
+            head = int(now * 0.5 * w) % w
+            for k in range(24):
+                i = (head - k) % w
+                b = int(255 * (1 - k / 24))
+                fb.data[i] = (b, int(b * 0.35), 0)
+        elif p == "rainbow":
+            pos = np.linspace(0.0, 1.0, w, endpoint=False)
+            rgb = hsv_to_rgb((pos + now * 0.15) % 1.0, 1.0, np.ones(w))
+            fb.data = (rgb * 255).astype(np.uint8)
+        # "off" → bleibt schwarz
+        return fb
+
     # ── Geräte-Verwaltung (WLED / ArtNet) ──
     def _make_output(self, d: dict):
         px = int(d.get("pixels", self._pixels))
+        km = {
+            "cstart": float(d.get("cstart", 0.0)), "cend": float(d.get("cend", 1.0)),
+            "reverse": bool(d.get("reverse", False)),
+            "brightness": float(d.get("brightness", 1.0)), "gamma": float(d.get("gamma", 2.2)),
+        }
+        name = d.get("name") or d["id"]
         if d.get("type") == "artnet":
-            return ArtnetOutput(d["id"], d.get("name") or d["id"], d["host"], px,
-                                int(d.get("port", 6454)), int(d.get("universe", 0)))
-        return WledOutput(d["id"], d.get("name") or d["id"], d["host"], px, int(d.get("port", 4048)))
+            return ArtnetOutput(d["id"], name, d["host"], px,
+                                int(d.get("port", 6454)), int(d.get("universe", 0)), **km)
+        return WledOutput(d["id"], name, d["host"], px, int(d.get("port", 4048)), **km)
 
     def list_devices(self) -> list[dict]:
         online = {d.id: d.online for d in self.router.devices}
         return [{**d, "online": online.get(d["id"])} for d in self.devices]
 
     def add_device(self, host: str, name: str = "", pixels: int | None = None,
-                   type: str = "wled", port: int | None = None, universe: int = 0) -> dict:
+                   type: str = "wled", port: int | None = None, universe: int = 0,
+                   reverse: bool = False, brightness: float = 1.0,
+                   cstart: float = 0.0, cend: float = 1.0) -> dict:
         host = host.strip()
         prefix = "artnet" if type == "artnet" else "wled"
         dev_id = f"{prefix}-" + host.replace(".", "-").replace(":", "-")
@@ -326,6 +377,8 @@ class AppState:
             "id": dev_id, "type": type, "name": name.strip() or host, "host": host,
             "pixels": int(pixels or self._pixels),
             "port": int(port if port is not None else (6454 if type == "artnet" else 4048)),
+            "reverse": bool(reverse), "brightness": float(brightness),
+            "cstart": float(cstart), "cend": float(cend),
         }
         if type == "artnet":
             entry["universe"] = int(universe)

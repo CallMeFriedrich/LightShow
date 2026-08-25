@@ -61,7 +61,13 @@ async function playerCmd(action) {
 }
 
 const devices = ref([]);
-const newDev = reactive({ host: "", name: "", pixels: 480 });
+const newDev = reactive({ host: "", name: "", pixels: 480, reverse: false });
+async function testPattern(pattern) {
+  await fetch("/api/devices/test", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pattern, seconds: 6 }),
+  });
+}
 async function loadDevices() {
   devices.value = (await (await fetch("/api/devices")).json()).devices || [];
 }
@@ -69,7 +75,7 @@ async function addDevice() {
   if (!newDev.host.trim()) return;
   const r = await fetch("/api/devices", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ host: newDev.host, name: newDev.name, pixels: newDev.pixels }),
+    body: JSON.stringify({ host: newDev.host, name: newDev.name, pixels: newDev.pixels, reverse: newDev.reverse }),
   });
   devices.value = (await r.json()).devices || [];
   newDev.host = ""; newDev.name = "";
@@ -312,8 +318,19 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
         <label class="text-xs text-gray-400">LEDs
           <input v-model.number="newDev.pixels" type="number"
                  class="block mt-1 px-2 py-1 rounded bg-black/40 text-sm w-20" /></label>
+        <label class="flex items-center gap-1.5 text-xs text-gray-400">
+          <input type="checkbox" v-model="newDev.reverse" class="accent-fuchsia-500" /> gespiegelt</label>
         <button @click="addDevice"
                 class="px-4 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-sm font-medium">Hinzufügen</button>
+      </div>
+      <div class="mt-4 pt-3 border-t border-white/10">
+        <div class="text-xs uppercase text-gray-400 mb-2">Test-Pattern (Verkabelung prüfen, 6 s)</div>
+        <div class="flex flex-wrap gap-2">
+          <button @click="testPattern('rainbow')" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">🌈 Rainbow</button>
+          <button @click="testPattern('solid')" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">⬜ Solid</button>
+          <button @click="testPattern('chase')" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">🏃 Chase</button>
+          <button @click="testPattern('off')" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">⏹ Aus</button>
+        </div>
       </div>
     </div>
 
