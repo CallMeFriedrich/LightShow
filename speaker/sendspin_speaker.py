@@ -15,6 +15,7 @@ Stopp:  Strg+C
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 import sys
 import threading
@@ -125,12 +126,28 @@ class SendspinSpeaker:
 
     async def run(self) -> None:
         client = self._build_client()
-        listener = ClientListener(
-            client_id=self._id, on_connection=self._on_connection(client),
-            port=_PORT, client_name=self.name,
-        )
-        await listener.start()
-        print(f"[sendspin-speaker] '{self.name}' aktiv (mDNS, Port {_PORT}).")
+        # Freien Port suchen (8928 ist evtl. von einer alten SendSpin-App belegt).
+        # MASS liest den tatsächlichen Port per mDNS — jeder Port funktioniert.
+        listener = None
+        last_err: Exception | None = None
+        for port in range(_PORT, _PORT + 12):
+            candidate = ClientListener(
+                client_id=self._id, on_connection=self._on_connection(client),
+                port=port, client_name=self.name,
+            )
+            try:
+                await candidate.start()
+                listener = candidate
+                break
+            except OSError as exc:
+                last_err = exc
+                with contextlib.suppress(Exception):
+                    await candidate.stop()
+        if listener is None:
+            print("[sendspin-speaker] Kein freier Port 8928–8939. Läuft evtl. noch eine "
+                  "alte SendSpin-App? Bitte im Task-Manager beenden.")
+            raise last_err  # type: ignore[misc]
+        print(f"[sendspin-speaker] '{self.name}' aktiv (mDNS, Port {listener.port}).")
         print("  → In Music Assistant als SendSpin-Gerät sichtbar. Mit LightShow gruppieren und abspielen.")
         print("  → Beenden mit Strg+C.")
         try:
