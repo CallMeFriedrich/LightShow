@@ -265,7 +265,7 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
                  @change="patch({ smoothing: cfg.smoothing })" class="w-full accent-fuchsia-500" />
         </label>
         <label class="block">
-          <div class="flex justify-between text-sm mb-1"><span>Szenendauer</span>
+          <div class="flex justify-between text-sm mb-1"><span>Szenendauer (Empfehlung)</span>
             <span class="font-mono">{{ cfg.scene_seconds }}s</span></div>
           <input type="range" min="5" max="180" step="5" v-model.number="cfg.scene_seconds"
                  @change="patch({ scene_seconds: cfg.scene_seconds })" class="w-full accent-fuchsia-500" />

@@ -103,8 +103,10 @@ class ShowEngine:
             self.idle.render(canvas, ctx)
         else:
             bass_passage = a.bass > 0.4 and a.highs < 0.22 and a.mids < 0.45
-            # Fester Effekt je Abschnitt; wechselt NUR beim Abschnittswechsel.
-            self.scene.ensure(section, self.pixels, cfg.section_floor)
+            # Effekt fest je Abschnitt; scene_seconds ist nur eine EMPFEHLUNG:
+            # ein weicher Wechsel passiert erst am nächsten passenden Beat.
+            self.scene.ensure(section, self.pixels, cfg.section_floor, t)
+            self.scene.soft_change(t, cfg.scene_seconds, a.beat_now, section)
             ctx.direction = self.scene.direction
             if bass_passage:
                 self._render_bass(canvas, ctx)
