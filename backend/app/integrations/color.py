@@ -28,6 +28,9 @@ def extract_hue(image_bytes: bytes) -> float | None:
     hsv = np.asarray(img.convert("HSV"), dtype=np.float32).reshape(-1, 3) / 255.0
     h, s, v = hsv[:, 0], hsv[:, 1], hsv[:, 2]
     mask = (s > 0.3) & (v > 0.2)
+    # Sättigungs-Filter (aus alter Logik): fast graue Cover nicht umfärben.
+    if float(np.mean(mask)) < 0.05:
+        return None
     if mask.sum() < 4:  # zu wenig Farbe → Gesamtbild nehmen
         mask = np.ones_like(s, dtype=bool)
     weights = s[mask] * v[mask]

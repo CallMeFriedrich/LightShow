@@ -10,7 +10,7 @@ const analysis = reactive({
   energy: 0, mood: 0, bpm: 0, beat: false, onset: 0, drop: false,
   song_time: 0, silence: false,
 });
-const show = reactive({ scene: "—", pattern: "—", section: "verse", bass_passage: false, blackout: false, strobe: false, eff_intensity: 0, buildup: 0, drop: false });
+const show = reactive({ scene: "—", pattern: "—", section: "verse", bass_passage: false, blackout: false, strobe: false, eff_intensity: 0, buildup: 0, drop: false, next_drop_s: null, coverage: 0 });
 const SECTION_COLORS = { intro: "bg-sky-500/40", build: "bg-amber-500/50", drop: "bg-fuchsia-500/60", verse: "bg-white/15", break: "bg-indigo-500/40", outro: "bg-slate-500/40" };
 const SECTION_LABELS = { intro: "Intro", build: "Build-up", drop: "Drop / Chorus", verse: "Verse", break: "Breakdown", outro: "Outro" };
 const player = reactive({ online: false, state: "idle", elapsed: 0, player_name: "", track: { title: "", artist: "", album: "", image_url: "", duration: 0 } });
@@ -213,6 +213,10 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
           <span v-if="show.strobe" class="px-2 py-1 rounded bg-yellow-400/40 text-xs">strobe</span>
           <span v-if="show.blackout" class="px-2 py-1 rounded bg-black text-xs ring-1 ring-white/20">blackout</span>
           <span v-if="analysis.drop" class="px-2 py-1 rounded bg-fuchsia-500/40 text-xs">DROP</span>
+          <span v-if="show.next_drop_s != null" class="px-2 py-1 rounded bg-orange-500/30 text-xs">
+            ⏳ Drop in {{ show.next_drop_s }}s</span>
+          <span v-if="show.coverage > 0" class="px-2 py-1 rounded bg-emerald-500/20 text-xs">
+            Struktur {{ Math.round(show.coverage * 100) }}% gelernt</span>
         </div>
       </div>
       <div v-if="show.buildup > 0.01" class="mt-2">

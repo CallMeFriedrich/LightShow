@@ -27,7 +27,7 @@ from .effects.config import ShowConfig
 from .effects.sections import SectionDetector
 from .integrations.color import fetch_hue
 from .integrations.home_assistant import HAClient
-from .integrations.lookahead import LookAhead
+from .integrations.lookahead import LookAhead, derive_drops
 from .integrations.models import PlayerState
 from .integrations.music_assistant import MassClient
 from .output.artnet import ArtnetOutput
@@ -96,6 +96,8 @@ class AppState:
         self._track_profile: list[float] = []          # gelerntes Energie-Profil (1/s)
         self._prof_acc: dict[int, list] = {}           # Aufzeichnung laufender Track {sec:[sum,count]}
         self._prof_track_id = ""
+        self._next_drop_s: float | None = None         # Sekunden bis nächstem gelernten Drop
+        self._coverage = 0.0                           # wie viel der Songstruktur gelernt ist
         self._http: httpx.AsyncClient | None = None
         self._last_cover_url = ""
         self._source = None  # aktive AudioSource (für Steuerung, z. B. SendSpin)
@@ -128,9 +130,12 @@ class AppState:
             now = loop.time()
             dt = now - last
             last = now
+            if dt > 0.3:  # Watchdog: ein Stall friert den Streifen ein (Idee aus altem Code)
+                log.warning("Frame-Stall %.2fs — Render-Loop hängt kurz", dt)
             a = self.latest_analysis
 
             elapsed = self._elapsed(now)
+            self._next_drop_s = self.lookahead.seconds_to_next_drop(elapsed) if elapsed is not None else None
             buildup, predicted = self._lookahead_step(a, elapsed)
             future_e = self._profile_step(elapsed, a.energy)
             dur = self.player.track.duration
@@ -142,7 +147,11 @@ class AppState:
             self._preview_decimator = (self._preview_decimator + 1) % 4
             if self._preview_decimator == 0:
                 self.bus.publish("render.preview", self.preview.as_hex())
-                self.bus.publish("show.status", self.show.status)
+                self.bus.publish("show.status", {
+                    **self.show.status,
+                    "next_drop_s": round(self._next_drop_s, 1) if self._next_drop_s is not None else None,
+                    "coverage": round(self._coverage, 2),
+                })
 
     def _elapsed(self, now: float) -> float | None:
         """Interpolierte Abspielposition in Sekunden (oder None wenn nicht spielend)."""
@@ -245,8 +254,13 @@ class AppState:
         self._prof_acc = {}
         self._prof_track_id = new_tid
         self._track_profile = await asyncio.to_thread(self.store.get_profile, new_tid)
-        drops = await asyncio.to_thread(self.store.get_drops, new_tid)
+        # Drops = realtime erkannte + aus dem Energie-Profil abgeleitete (gemergt).
+        drops = list(await asyncio.to_thread(self.store.get_drops, new_tid))
+        drops += derive_drops(self._track_profile)
         self.lookahead.set_track(new_tid, drops)
+        # Coverage: wie viel der Songlänge haben wir schon gelernt?
+        dur = self.player.track.duration
+        self._coverage = min(1.0, len(self._track_profile) / dur) if dur > 0 else 0.0
 
     def register_tasks(self) -> None:
         self.supervisor.register("audio", self._audio_task, restart=True)
@@ -278,6 +292,8 @@ class AppState:
             "show": self.show.status,
             "config": self.show_cfg.to_dict(),
             "player": self.player.to_dict(),
+            "next_drop_s": round(self._next_drop_s, 1) if self._next_drop_s is not None else None,
+            "coverage": round(self._coverage, 2),
             "tasks": self.supervisor.status(),
             "devices": [
                 {"id": d.id, "name": d.name, "pixels": d.pixels, "online": d.online}

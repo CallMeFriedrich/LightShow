@@ -12,6 +12,30 @@ _TOL = 1.5         # s: Dedupe-Fenster (wie im Store)
 _PREDICT = 0.15    # s: Fenster, in dem der Drop prädiktiv ausgelöst wird
 
 
+def derive_drops(profile: list[float]) -> list[float]:
+    """Drop-Positionen (Sekunden) aus dem gelernten Energie-Profil ableiten.
+
+    Ein Drop = anhaltender Energie-Sprung auf hohes Niveau (Chorus/Hook). Robuster
+    als reine Realtime-Erkennung, weil die ganze Hüllkurve bekannt ist. (Idee aus
+    der alten StructureRecorder-Logik, hier aus unserem Live-Profil abgeleitet.)
+    """
+    n = len(profile)
+    if n < 12:
+        return []
+    peak = max(profile) or 1.0
+    srt = sorted(profile)
+    base = srt[len(srt) // 2]  # Median
+    drops: list[float] = []
+    last = -999
+    for s in range(4, n):
+        rise = profile[s] - profile[s - 4]
+        if (profile[s] > max(0.5, base * 1.1) and profile[s] > peak * 0.75
+                and rise > 0.12 and (s - last) > 8):
+            drops.append(float(s))
+            last = s
+    return drops
+
+
 class LookAhead:
     def __init__(self) -> None:
         self.track_id = ""
@@ -32,6 +56,13 @@ class LookAhead:
         self.drops.append(elapsed)
         self.drops.sort()
         return True
+
+    def seconds_to_next_drop(self, elapsed: float) -> float | None:
+        """Sekunden bis zum nächsten bekannten Drop (oder None)."""
+        for p in self.drops:
+            if p > elapsed + _PREDICT:
+                return p - elapsed
+        return None
 
     def compute(self, elapsed: float) -> tuple[float, bool]:
         """(buildup [0,1], predicted_drop) für die aktuelle Position."""
