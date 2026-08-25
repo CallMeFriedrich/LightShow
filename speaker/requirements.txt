@@ -1,0 +1,4 @@
+# SendSpin-Speaker — bewusst aiosendspin 6.0.5 (passt zu Music Assistant 2.9.x)
+aiosendspin==6.0.5
+sounddevice>=0.4.6
+numpy>=1.26
