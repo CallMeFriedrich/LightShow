@@ -52,7 +52,11 @@ class Sparkle(Layer):
         self._buf *= float(np.exp(-ctx.dt / self.decay))
         if ctx.a.mood >= self.mood_gate and ctx.a.highs_onset >= self.onset_gate:
             n = max(1, int(ctx.pixels * 0.04 * ctx.eff_intensity))
-            idx = ctx.rng.integers(0, ctx.pixels, size=n)
+            # Gleichmäßige Abstände statt Zufallspositionen: ein Raster mit
+            # gemeinsamem Offset (funkelt lebendig, sitzt aber immer regelmäßig).
+            step = ctx.pixels / n
+            phase = float(ctx.rng.random()) * step
+            idx = ((np.arange(n) * step + phase).astype(int)) % ctx.pixels
             self._buf[idx] = 1.0
         amt = self.gain * self._buf * ctx.eff_intensity
         rgb = hsv_to_rgb(np.full(ctx.pixels, (ctx.base_hue + 0.1) % 1.0), 0.15, amt)
