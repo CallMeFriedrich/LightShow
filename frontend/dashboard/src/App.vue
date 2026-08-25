@@ -310,7 +310,7 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
       <div v-else class="text-sm text-gray-500 mb-3">Noch keine WLED-Geräte — nur virtueller Preview.</div>
       <div class="flex flex-wrap items-end gap-2">
         <label class="text-xs text-gray-400">IP-Adresse
-          <input v-model="newDev.host" placeholder="10.10.1.50"
+          <input v-model="newDev.host" placeholder="192.168.1.50"
                  class="block mt-1 px-2 py-1 rounded bg-black/40 text-sm w-40 font-mono" /></label>
         <label class="text-xs text-gray-400">Name
           <input v-model="newDev.name" placeholder="Links"

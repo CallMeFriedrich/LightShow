@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     led_count: int = 480
     fixtures: int = 2
     # Einfachster Weg, WLED anzubinden: IP(s) kommagetrennt, je `wled_pixels` LEDs.
-    wled_hosts: str = ""          # z. B. "10.10.1.50,10.10.1.51"
+    wled_hosts: str = ""          # z. B. "192.168.1.50,192.168.1.51"
     wled_pixels: int = 480        # LEDs pro Host aus wled_hosts
     # Fortgeschritten (überschreibt nichts, wird zusätzlich genutzt): volle JSON-Liste.
     wled_nodes: list[WledNode] = Field(default_factory=list)
