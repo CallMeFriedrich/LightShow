@@ -124,10 +124,16 @@ class SendspinSpeaker:
 
         return handler
 
-    async def run(self) -> None:
+    async def run(self, connect_host: str | None = None, connect_port: int = 8927) -> None:
+        if connect_host:
+            await self._run_connect(connect_host, connect_port)
+        else:
+            await self._run_listen()
+
+    async def _run_listen(self) -> None:
+        """mDNS/Listen-Modus: MASS entdeckt uns und verbindet sich (nur im lokalen LAN)."""
         client = self._build_client()
         # Freien Port suchen (8928 ist evtl. von einer alten SendSpin-App belegt).
-        # MASS liest den tatsächlichen Port per mDNS — jeder Port funktioniert.
         listener = None
         last_err: Exception | None = None
         for port in range(_PORT, _PORT + 12):
@@ -155,9 +161,49 @@ class SendspinSpeaker:
         finally:
             await listener.stop()
             await client.disconnect()
-            if self._stream is not None:
+            self._close_stream()
+
+    async def _run_connect(self, host: str, port: int) -> None:
+        """Connect-Modus: wir wählen MASS aktiv per IP an (VPN-tauglich, nur ausgehend)."""
+        url = f"ws://{host}:{port}/sendspin"
+        backoff = 1.0
+        print(f"[sendspin-speaker] '{self.name}' — Direktverbindung zu {url}")
+        print("  → Beenden mit Strg+C.")
+        try:
+            while True:
+                client = self._build_client()
+                try:
+                    await client.connect(url)
+                    print("[sendspin-speaker] Music Assistant verbunden — spiele bei Wiedergabe.")
+                    backoff = 1.0
+                    closed = asyncio.Event()
+                    remove = client.add_disconnect_listener(closed.set)
+                    try:
+                        await closed.wait()
+                    finally:
+                        remove()
+                    print("[sendspin-speaker] getrennt.")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[sendspin-speaker] Verbindung fehlgeschlagen: {exc}")
+                finally:
+                    with contextlib.suppress(Exception):
+                        await client.disconnect()
+                    with self._lock:
+                        self._buf.clear()
+                print(f"[sendspin-speaker] neuer Versuch in {backoff:.0f}s...")
+                await asyncio.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
+        finally:
+            self._close_stream()
+
+    def _close_stream(self) -> None:
+        if self._stream is not None:
+            with contextlib.suppress(Exception):
                 self._stream.stop()
                 self._stream.close()
+            self._stream = None
 
 
 def _list_devices() -> None:
@@ -165,20 +211,37 @@ def _list_devices() -> None:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:]]
-    if args and args[0] in ("--devices", "-l"):
+    import argparse
+
+    parser = argparse.ArgumentParser(description="SendSpin-Speaker für Music Assistant")
+    parser.add_argument("name", nargs="?", default=socket.gethostname(),
+                        help="Anzeigename des Geräts in Music Assistant")
+    parser.add_argument("--connect", "-c", metavar="HOST[:PORT]",
+                        help="Direktverbindung zu MASS per IP (für VPN / getrennte Netze). "
+                             "Standard-Port 8927. Ohne diese Option: automatische mDNS-Erkennung.")
+    parser.add_argument("--device", "-d", type=int, help="Audio-Ausgabegerät (Index, siehe --devices)")
+    parser.add_argument("--devices", "-l", action="store_true", help="Audio-Ausgabegeräte auflisten")
+    args = parser.parse_args()
+
+    if args.devices:
         _list_devices()
         return
-    name = args[0] if args else socket.gethostname()
-    device = None
-    if len(args) > 1:  # optionaler Ausgabe-Device-Index
-        try:
-            device = int(args[1])
-        except ValueError:
-            pass
-    speaker = SendspinSpeaker(name, device)
+
+    host: str | None = None
+    port = 8927
+    if args.connect:
+        if ":" in args.connect:
+            h, p = args.connect.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+            else:
+                host = args.connect
+        else:
+            host = args.connect
+
+    speaker = SendspinSpeaker(args.name, args.device)
     try:
-        asyncio.run(speaker.run())
+        asyncio.run(speaker.run(connect_host=host, connect_port=port))
     except KeyboardInterrupt:
         print("\n[sendspin-speaker] beendet.")
 

@@ -10,6 +10,15 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Starte...
-python sendspin_speaker.py %*
+echo.
+echo MASS-IP fuer Direktverbindung eingeben (z.B. 172.16.1.6) --
+echo   noetig bei VPN / getrennten Netzen.
+echo   Leer lassen = automatische Erkennung im lokalen LAN (mDNS).
+set /p MASSIP="MASS-IP: "
+echo.
+if "%MASSIP%"=="" (
+  python sendspin_speaker.py
+) else (
+  python sendspin_speaker.py --connect %MASSIP%
+)
 pause

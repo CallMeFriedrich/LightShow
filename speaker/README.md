@@ -37,6 +37,29 @@ So lässt sich der Rechner mit **LightShow** in eine SendSpin-Sync-Gruppe legen 
    Leg es mit **LightShow** in eine **Sync-Gruppe** und spiele Musik auf die Gruppe →
    Ton aus dem Laptop, Licht synchron.
 
+## VPN / getrennte Netze — Direktverbindung per IP
+
+Wenn der Laptop **über VPN** oder in einem **anderen Netz** hängt, funktioniert die
+automatische mDNS-Erkennung nicht (Multicast läuft nicht über VPN, MASS erreicht den
+Laptop nicht von außen). Dann verbindet sich der Speaker **aktiv** zur MASS-IP
+(nur ausgehend — VPN-tauglich):
+
+- **Beim `run.bat`-Doppelklick** einfach die **MASS-IP eingeben**, wenn danach gefragt wird
+  (z. B. `172.16.1.6`). Leer lassen = automatische Erkennung.
+- **Oder direkt:**
+  ```
+  python sendspin_speaker.py "Laptop" --connect 172.16.1.6
+  ```
+  (Anderer Port: `--connect 172.16.1.6:8927`.)
+
+Bei Erfolg:
+```
+[sendspin-speaker] 'Laptop' — Direktverbindung zu ws://172.16.1.6:8927/sendspin
+[sendspin-speaker] Music Assistant verbunden — spiele bei Wiedergabe.
+```
+Voraussetzung: Der Laptop muss MASS unter der IP **erreichen** (`ping 172.16.1.6`), und der
+SendSpin-Server-Port **8927** muss über das VPN offen sein.
+
 ## Nützliches
 
 - **Ausgabegerät wählen** (falls der Ton aufs falsche Gerät geht): erst die Geräte auflisten
