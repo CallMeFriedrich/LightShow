@@ -27,7 +27,7 @@ import sounddevice as sd
 
 from aiosendspin.client import ClientListener, SendspinClient
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-from aiosendspin.models.types import AudioCodec, Roles
+from aiosendspin.models.types import AudioCodec, PlayerCommand, PlayerStateType, Roles
 
 _PORT = 8928                    # mDNS/Listen-Port (Standard für SendSpin-Clients)
 _MAX_BUFFER_S = 0.5            # Audio-Puffer deckeln (Latenz/Sync)
@@ -44,6 +44,9 @@ class SendspinSpeaker:
         self._sr = 48000
         self._ch = 2
         self._client: SendspinClient | None = None
+        self._vol = 1.0        # 0..1, von MASS gesteuert
+        self._muted = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ── stabile Client-ID (damit MASS uns wiedererkennt) ──
     def _load_id(self) -> str:
@@ -63,7 +66,7 @@ class SendspinSpeaker:
                 SupportedAudioFormat(codec=AudioCodec.PCM, channels=2, sample_rate=48000, bit_depth=16),
             ],
             buffer_capacity=2_000_000,
-            supported_commands=[],
+            supported_commands=[PlayerCommand.VOLUME, PlayerCommand.MUTE],
         )
 
     # ── Audio-Ausgabe (PortAudio/sounddevice) ──
@@ -88,6 +91,9 @@ class SendspinSpeaker:
         arr = np.frombuffer(take, dtype="<i2")
         if arr.size < frames * self._ch:  # Unterlauf → mit Stille auffüllen
             arr = np.concatenate([arr, np.zeros(frames * self._ch - arr.size, dtype=np.int16)])
+        gain = 0.0 if self._muted else self._vol
+        if gain != 1.0:  # Lautstärke von MASS anwenden
+            arr = (arr.astype(np.float32) * gain).astype(np.int16)
         outdata[:] = arr.reshape(frames, self._ch)
 
     def _on_audio(self, timestamp_us: int, pcm: bytes, fmt) -> None:
@@ -102,10 +108,36 @@ class SendspinSpeaker:
     def _build_client(self) -> SendspinClient:
         client = SendspinClient(
             self._id, self.name, roles=[Roles.PLAYER], player_support=self._player_support(),
+            initial_volume=int(self._vol * 100), initial_muted=self._muted,
         )
         client.add_audio_chunk_listener(self._on_audio)
+        client.add_server_command_listener(self._on_command)
         self._client = client
         return client
+
+    def _on_command(self, payload) -> None:
+        """Volume/Mute-Kommando von MASS → auf die Ausgabe anwenden + zurückmelden."""
+        p = getattr(payload, "player", None)
+        if p is None:
+            return
+        cmd = getattr(p, "command", None)
+        if cmd == PlayerCommand.VOLUME and p.volume is not None:
+            self._vol = max(0.0, min(1.0, p.volume / 100.0))
+        elif cmd == PlayerCommand.MUTE and p.mute is not None:
+            self._muted = bool(p.mute)
+        else:
+            return
+        if self._loop is not None:  # aktuellen Stand an MASS zurückmelden
+            self._loop.create_task(self._reflect_state())
+
+    async def _reflect_state(self) -> None:
+        c = self._client
+        if c is not None and c.connected:
+            with contextlib.suppress(Exception):
+                await c.send_player_state(
+                    state=PlayerStateType.SYNCHRONIZED,
+                    volume=int(self._vol * 100), muted=self._muted,
+                )
 
     def _on_connection(self, client: SendspinClient):
         async def handler(ws) -> None:
@@ -125,6 +157,7 @@ class SendspinSpeaker:
         return handler
 
     async def run(self, connect_host: str | None = None, connect_port: int = 8927) -> None:
+        self._loop = asyncio.get_running_loop()
         if connect_host:
             await self._run_connect(connect_host, connect_port)
         else:

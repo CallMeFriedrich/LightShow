@@ -58,7 +58,7 @@ class SendSpinSource(AudioSource):
 
     def _player_support(self):
         from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-        from aiosendspin.models.types import AudioCodec
+        from aiosendspin.models.types import AudioCodec, PlayerCommand
 
         sr, ch = self.s.audio_sample_rate, self.s.audio_channels
         # Nur PCM anbieten → MASS transkodiert serverseitig, wir bekommen rohes PCM.
@@ -67,7 +67,9 @@ class SendSpinSource(AudioSource):
                 SupportedAudioFormat(codec=AudioCodec.PCM, channels=ch, sample_rate=sr, bit_depth=16),
             ],
             buffer_capacity=2_000_000,
-            supported_commands=[],
+            # Volume/Mute anbieten, damit der (Gruppen-)Lautstärkeregler in MASS
+            # aktiv ist. LightShow gibt keinen Ton aus → wird ignoriert.
+            supported_commands=[PlayerCommand.VOLUME, PlayerCommand.MUTE],
         )
 
     def _on_audio(self, timestamp_us: int, pcm: bytes, fmt) -> None:
