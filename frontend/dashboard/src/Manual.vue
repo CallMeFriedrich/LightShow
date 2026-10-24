@@ -160,6 +160,16 @@ const testPattern = (id, on) => send({ layers: { ["p_" + id]: { on } } });
 
 // ── Globales Tempo (TAP) ──
 const beatKey = ref(0);
+// BPM direkt eingeben: Feld hält den getippten Wert, solange es den Fokus hat
+// (die Anzeige aktualisiert sich sonst laufend). Eingabe schaltet „Musik folgen" aus.
+const bpmEdit = ref(null);
+const setBpm = (v) => send({ bpm: Math.round(Math.min(300, Math.max(20, v)) * 10) / 10, music_sync: false });
+function commitBpm() {
+  const v = parseFloat(String(bpmEdit.value).replace(",", "."));
+  bpmEdit.value = null;
+  if (Number.isFinite(v) && Math.abs(v - bpm.value) >= 0.05) setBpm(v);
+}
+
 const tapGlobal = createTapper((hz) => {
   beatKey.value++;
   send(hz ? { tap: true, bpm: Math.round(hz * 600) / 10, music_sync: false } : { tap: true });
@@ -243,11 +253,19 @@ onUnmounted(() => { releaseAll(); window.removeEventListener("keydown", kd); win
             <div class="flex items-center gap-2">
               <span :key="beatKey" class="beat w-3 h-3 rounded-full bg-cyan-300"
                     :style="{ animationDuration: 60 / bpm + 's' }"></span>
-              <span class="text-3xl font-mono">{{ bpm.toFixed(1) }}</span><span class="text-xs text-gray-400">BPM</span>
+              <input type="number" min="20" max="300" step="0.1" title="BPM eingeben (Enter)"
+                     :value="bpmEdit ?? bpm.toFixed(1)"
+                     @focus="bpmEdit = bpm.toFixed(1); $event.target.select()"
+                     @input="bpmEdit = $event.target.value"
+                     @keydown.enter="$event.target.blur()" @blur="commitBpm"
+                     class="bpm-input w-24 text-3xl font-mono bg-transparent rounded px-1 -mx-1 hover:bg-white/10 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
+              <span class="text-xs text-gray-400">BPM</span>
             </div>
             <div class="flex gap-1">
-              <button @click="send({ bpm: Math.max(20, state.bpm / 2), music_sync: false })" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">½×</button>
-              <button @click="send({ bpm: Math.min(300, state.bpm * 2), music_sync: false })" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">2×</button>
+              <button @click="setBpm(bpm - 1)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">−1</button>
+              <button @click="setBpm(bpm + 1)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">+1</button>
+              <button @click="setBpm(bpm / 2)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">½×</button>
+              <button @click="setBpm(bpm * 2)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">2×</button>
             </div>
             <button @click="send({ music_sync: !state.music_sync })"
                     class="py-1 rounded-lg ring-1 text-xs"
@@ -536,6 +554,8 @@ onUnmounted(() => { releaseAll(); window.removeEventListener("keydown", kd); win
 <style scoped>
 .bump { animation: bump 0.3s ease-out; }
 @keyframes bump { from { background: rgba(125, 211, 252, 0.9); color: #000; } to { background: rgba(56, 189, 248, 0.2); } }
+.bpm-input { -moz-appearance: textfield; appearance: textfield; }
+.bpm-input::-webkit-inner-spin-button, .bpm-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .beat { animation: beat linear infinite; }
 @keyframes beat { 0% { opacity: 1; transform: scale(1.3); } 30% { opacity: 0.25; transform: scale(1); } 100% { opacity: 0.15; } }
 </style>
