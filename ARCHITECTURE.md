@@ -91,6 +91,7 @@ Verzeichnis: `backend/app/`
 | `effects/scene.py` | SceneManager (mood-Pools, Gewichtung, Richtung) | Slice 1 |
 | `effects/output_fx.py` | Blackout, Strobe (Output-Layer) | Slice 1 |
 | `effects/compositor.py` | `ShowEngine` — komponiert die Show pro Frame | Slice 1 |
+| `effects/manual.py` | `ManualEngine` — Live-Pult im Modus „manuell“ (Effekt-Stapel, Szenen, Muster, Strobe/Blinder/Bump) | Slice 3 |
 | `api/ws.py` | WebSocket-Hub (State-Broadcast, Kommandos) | Slice 1 |
 | `api/routes.py` | REST (Status, Effekte, Player, Pult-Layout) | Slice 1 |
 | `integrations/music_assistant.py` | MASS-WS-Client: Player-State, Steuerung, Reconnect | Slice 2 |
@@ -208,6 +209,27 @@ und **Look-ahead/Build-ups vor bekannten Drops** (§9). Da MASS die **Track-Iden
 Abspielposition liefert, entfällt Audio-Fingerprinting: erkannte Drops werden pro `track_id`
 in SQLite (`data/lightshow.sqlite`, pro Track gedeckelt) gespeichert und beim Wiederabspielen
 prädiktiv genutzt. Realtime-Drop-Erkennung ergänzt das für unbekannte Tracks.
+
+## 5b. Manueller Modus (Live-Pult)
+
+`ShowConfig.mode` schaltet zwischen **auto** (audio-gesteuerte `ShowEngine`) und **manual**.
+Im Modus *manual* rendert der Render-Task stattdessen die `ManualEngine` (`effects/manual.py`);
+Test-Patterns haben weiterhin Vorrang. Gesteuert wird per WS (`manual`, `scene`, `pattern`,
+`set_mode`) bzw. REST (`/api/manual`, `/api/mode`, `/api/scenes/{op}`, `/api/patterns/{op}`).
+Zustand (ohne Halte-Buttons) liegt in `data/manual.json`, Änderungen gehen als `manual.state`
+an alle Clients.
+
+- **Looks:** Ein Look = Stapel von Effekt-Layern (je Farbe, Stärke, Tempo) + Grundfarbe für
+  Auto-Farben. Das Live-Pult ist ein Look, jede **Szene** ein eigener, programmierbarer Look.
+  Aktive Szenen werden mit dem Live-Pult zusammen komponiert und über `scene_fade` ein-/ausgeblendet.
+- **Layer:** Flächen (solid, gradient, breathe, rainbow, cycle) mischen additiv; Muster (wave,
+  chase, theater, police, sparkle, eigene Muster) liegen per Alpha-Blend deckend darüber.
+- **Eigene Muster (Sequenzer):** Raster Segmente × Schritte, Zellen = Farbe | Grundfarbe |
+  Akzent | aus; ein Tempo-Zyklus = ein Schritt, Übergang hart oder weich. Layer-Key `p_<id>`.
+- **Tempo:** globales Tempo (Tap oder live Musik-BPM, phasenkorrigiert auf erkannte Beats).
+  Jeder Layer und der Strobe laufen synchron dazu (Faktor ⅛…4) oder mit eigenem Tempo (Hz).
+- **Ausgabe-Reihenfolge:** Flächen → Muster → Beat-Pump → Bump → Strobe → Pult-Dimmer →
+  Flash → Blinder (sofort Warmweiß, Fade-out nach dem Loslassen) → Blackout (gewinnt immer).
 
 ## 6. Integrationen
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import asdict
 
 import httpx
 
@@ -24,6 +25,7 @@ from .core.engine import Engine
 from .core.event_bus import EventBus
 from .effects.compositor import ShowEngine
 from .effects.config import ShowConfig
+from .effects.manual import EFFECTS, MULTS, PALETTE, ManualEngine, ManualState
 from .effects.sections import SectionDetector
 from .integrations.color import fetch_hue
 from .integrations.home_assistant import HAClient
@@ -74,6 +76,13 @@ class AppState:
 
         fixtures = len(self.devices) or self.settings.fixtures
         self.show = ShowEngine(self.show_cfg, pixels=pixels, fixtures=fixtures)
+        if self.show_cfg.mode not in ("auto", "manual"):
+            self.show_cfg.mode = "auto"
+
+        # Manueller Modus (Live-Pult): Einstellungen persistiert, Halte-Buttons nicht.
+        self._manual_path = f"{self.settings.data_dir}/manual.json"
+        self.manual = ManualEngine(ManualState.load(self._manual_path), pixels=pixels, fixtures=fixtures)
+        self._manual_save_pending = False
 
         # Licht-Pult + Home Assistant.
         self.console = ConsoleManager(f"{self.settings.data_dir}/console.json")
@@ -149,6 +158,24 @@ class AppState:
 
             a = self.latest_analysis
 
+            # Manueller Modus: Live-Pult statt audio-gesteuerter Show.
+            if self.show_cfg.mode == "manual":
+                buf, fixture_gains = self.manual.render(a, now, dt, self.show_cfg.brightness)
+                await self.router.broadcast(buf, fixture_gains)
+                self._preview_decimator = (self._preview_decimator + 1) % 4
+                if self._preview_decimator == 0:
+                    self.bus.publish("render.preview", self.preview.as_hex())
+                    m = self.manual.state
+                    active = [e for e, layer in m.layers.items() if layer["on"]]
+                    active += [m.scenes[s].name for s in m.active_scenes if s in m.scenes]
+                    self.bus.publish("show.status", {
+                        "mode": "manual", "scene": "manuell: " + (" + ".join(active) or "aus"), "pattern": "full",
+                        "section": "verse", "bass_passage": False, "blackout": m.blackout,
+                        "strobe": m.strobe_on, "drop": False, "buildup": 0.0,
+                        "next_drop_s": None, "bpm_eff": round(self.manual.bpm_eff, 1),
+                    })
+                continue
+
             elapsed = self._elapsed(now)
             self._next_drop_s = self.lookahead.seconds_to_next_drop(elapsed) if elapsed is not None else None
             buildup, predicted = self._lookahead_step(a, elapsed)
@@ -164,6 +191,7 @@ class AppState:
                 self.bus.publish("render.preview", self.preview.as_hex())
                 self.bus.publish("show.status", {
                     **self.show.status,
+                    "mode": "auto",
                     "next_drop_s": round(self._next_drop_s, 1) if self._next_drop_s is not None else None,
                     "coverage": round(self._coverage, 2),
                 })
@@ -304,6 +332,8 @@ class AppState:
             "audio_source": self.settings.audio_source,
             "frame_rate": self.settings.frame_rate,
             "fixtures": self.show.fixtures,
+            "mode": self.show_cfg.mode,
+            "manual": self.manual_info(),
             "show": self.show.status,
             "config": self.show_cfg.to_dict(),
             "player": self.player.to_dict(),
@@ -317,7 +347,108 @@ class AppState:
         }
 
     def update_config(self, changes: dict) -> list[str]:
+        if "mode" in changes:  # Modus nur über set_mode (validiert + Broadcast)
+            changes = dict(changes)
+            self.set_mode(changes.pop("mode"))
         return self.show_cfg.update(changes)
+
+    # ── Manueller Modus ──
+    def set_mode(self, mode: str) -> str:
+        mode = "manual" if str(mode) == "manual" else "auto"
+        if mode != self.show_cfg.mode:
+            if mode == "manual":
+                # Halte-Buttons beim Umschalten nie „hängend" übernehmen.
+                self.manual.state.update({"blackout": False, "blinder": False, "flash": False})
+            self.show_cfg.update({"mode": mode})
+            log.info("Modus → %s", mode)
+        self.bus.publish("manual.state", self.manual_info())
+        return mode
+
+    def manual_info(self) -> dict:
+        return {
+            "mode": self.show_cfg.mode,
+            "state": self.manual.state.to_dict(),
+            "effects": list(EFFECTS),
+            "mults": list(MULTS),
+            "palette": [{"name": n, "hue": h, "saturation": sat} for n, h, sat in PALETTE],
+        }
+
+    def manual_update(self, changes: dict) -> list[str]:
+        changes = dict(changes)
+        tapped = bool(changes.pop("tap", False))
+        if tapped:
+            self.manual.tap()
+        if changes.pop("bump", False):
+            self.manual.bump()
+        applied = self.manual.state.update(changes)
+        if applied or tapped:
+            self.bus.publish("manual.state", self.manual_info())
+            # Persistieren gedrosselt (Fader feuern viele Updates), Halte-Buttons nie.
+            if any(k not in ("blackout", "blinder", "flash") for k in applied):
+                self._schedule_manual_save()
+        return applied
+
+    def scene_op(self, op: str, sid: str = "", **kw) -> dict | None:
+        """Szenen: create | update | delete | toggle | move. Liefert die Szene (oder None)."""
+        st = self.manual.state
+        sc = st.scenes.get(sid)
+        ok = True
+        if op == "create":
+            sc = st.scene_create(str(kw.get("name", "")), bool(kw.get("from_live", False)))
+        elif op == "update" and sc:
+            ok = bool(sc.update(kw.get("changes", {})))
+        elif op == "delete":
+            ok = st.scene_delete(sid)
+        elif op == "toggle":
+            ok = st.scene_toggle(sid, kw.get("on"))
+        elif op == "move":
+            ok = st.scene_move(sid, int(kw.get("delta", 0)))
+        else:
+            ok = False
+        if ok:
+            self.bus.publish("manual.state", self.manual_info())
+            self._schedule_manual_save()
+        return sc.to_dict() if (ok and sc and op != "delete") else None
+
+    def pattern_op(self, op: str, pid: str = "", **kw) -> dict | None:
+        """Eigene Muster: create | duplicate | update | delete. Liefert das Muster (oder None)."""
+        st = self.manual.state
+        pat = st.patterns.get(pid)
+        ok = True
+        if op == "create":
+            pat = st.pattern_create(str(kw.get("name", "")))
+        elif op == "duplicate":
+            pat = st.pattern_create(str(kw.get("name", "")), copy_of=pid)
+            ok = pat is not None
+        elif op == "update" and pat:
+            ok = bool(pat.update(kw.get("changes", {})))
+        elif op == "delete":
+            ok = st.pattern_delete(pid)
+        else:
+            ok = False
+        if ok:
+            self.bus.publish("manual.state", self.manual_info())
+            self._schedule_manual_save()
+        return asdict(pat) if (ok and pat and op != "delete") else None
+
+    def _schedule_manual_save(self) -> None:
+        if self._manual_save_pending:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.manual.state.save(self._manual_path)
+            return
+        self._manual_save_pending = True
+
+        def _save() -> None:
+            self._manual_save_pending = False
+            try:
+                self.manual.state.save(self._manual_path)
+            except OSError:
+                log.warning("manual.json konnte nicht gespeichert werden", exc_info=True)
+
+        loop.call_later(1.0, _save)
 
     # ── Test-Patterns (Verkabelung/Ausrichtung prüfen, Idee aus alter patterns.py) ──
     def run_test_pattern(self, pattern: str, seconds: float) -> None:
@@ -398,6 +529,7 @@ class AppState:
 
     def _update_fixtures(self) -> None:
         self.show.fixtures = len(self.devices) or self.settings.fixtures
+        self.manual.fixtures = self.show.fixtures
 
     # ── Licht-Pult: Trigger einer Button/Fader-Aktion ──
     async def console_trigger(self, action: dict) -> bool:
@@ -410,6 +542,24 @@ class AppState:
             self.show.set_base_hue(float(action["value"])); return True
         if kind == "player":
             return await self.player_command(action.get("cmd", ""), action.get("value"))
+        if kind == "mode":
+            self.set_mode(action.get("value", "auto")); return True
+        if kind == "manual":
+            if "toggle" in action:  # Effekt-Layer an/aus
+                layer = self.manual.state.layers.get(action["toggle"])
+                return bool(layer) and bool(self.manual_update({"layers": {action["toggle"]: {"on": not layer["on"]}}}))
+            if action.get("bump"):
+                self.manual.bump(); return True
+            if "flip" in action:    # Schalter umlegen, z. B. strobe_on
+                return bool(self.manual_update({action["flip"]: not getattr(self.manual.state, action["flip"], True)}))
+            if "key" in action:
+                return bool(self.manual_update({action["key"]: action.get("value")}))
+            return bool(self.manual_update(action.get("changes", {})))
+        if kind == "scene":         # Szene per Name (oder id) an/aus
+            st = self.manual.state
+            name = str(action.get("name", "")).strip().lower()
+            sid = action.get("id") or next((i for i, sc in st.scenes.items() if sc.name.lower() == name), "")
+            return self.scene_op("toggle", sid, on=action.get("on")) is not None
         if kind == "ha":
             svc = action.get("service", "toggle")
             eid = action.get("entity_id", "")

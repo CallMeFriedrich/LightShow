@@ -54,6 +54,23 @@ class Action(BaseModel):
     action: dict
 
 
+class Mode(BaseModel):
+    mode: str                    # auto | manual
+
+
+class ManualPatch(BaseModel):
+    changes: dict
+
+
+class SceneOp(BaseModel):
+    id: str = ""
+    name: str = ""
+    from_live: bool = False
+    changes: dict = {}
+    on: bool | None = None
+    delta: int = 0
+
+
 def build_router() -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -85,6 +102,42 @@ def build_router() -> APIRouter:
     async def base_hue(body: BaseHue, request: Request):
         state(request).show.set_base_hue(body.hue)
         return {"base_hue": round(state(request).show.base_hue, 3)}
+
+    # ── Modus + manuelles Live-Pult ──
+    @router.get("/mode")
+    async def get_mode(request: Request):
+        return {"mode": state(request).show_cfg.mode}
+
+    @router.post("/mode")
+    async def set_mode(body: Mode, request: Request):
+        if body.mode not in ("auto", "manual"):
+            raise HTTPException(status_code=400, detail="mode muss auto oder manual sein")
+        return {"mode": state(request).set_mode(body.mode)}
+
+    @router.get("/manual")
+    async def manual_get(request: Request):
+        return state(request).manual_info()
+
+    @router.post("/manual")
+    async def manual_set(body: ManualPatch, request: Request):
+        st = state(request)
+        applied = st.manual_update(body.changes)
+        return {"applied": applied, **st.manual_info()}
+
+    @router.post("/scenes/{op}")
+    async def scene(op: str, body: SceneOp, request: Request):
+        if op not in ("create", "update", "delete", "toggle", "move"):
+            raise HTTPException(status_code=404, detail=f"Unbekannte Szenen-Aktion: {op}")
+        sc = state(request).scene_op(op, body.id, name=body.name, from_live=body.from_live,
+                                     changes=body.changes, on=body.on, delta=body.delta)
+        return {"scene": sc, **state(request).manual_info()}
+
+    @router.post("/patterns/{op}")
+    async def pattern(op: str, body: SceneOp, request: Request):
+        if op not in ("create", "duplicate", "update", "delete"):
+            raise HTTPException(status_code=404, detail=f"Unbekannte Muster-Aktion: {op}")
+        pat = state(request).pattern_op(op, body.id, name=body.name, changes=body.changes)
+        return {"pattern": pat, **state(request).manual_info()}
 
     # ── Music Assistant ──
     @router.get("/player")

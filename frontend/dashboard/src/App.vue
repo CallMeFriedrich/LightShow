@@ -1,8 +1,59 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed, provide } from "vue";
 import Console from "./Console.vue";
+import Manual from "./Manual.vue";
 
 const view = ref("dashboard");
+
+// Betriebsart + manueller Pult-Zustand (per WS zwischen allen Clients synchron).
+const mode = ref("auto");
+const manual = reactive({
+  layers: {}, hue: 0.62, saturation: 1, brightness: 1, direction: 1, mirror: false, beat_sync: false,
+  bpm: 120, music_sync: false, strobe_on: false, strobe_hz: 8, strobe_sync: false, strobe_mult: 2,
+  strobe_white: true, strobe_alt: false, blinder_fade: 1.5, bump_gain: 0.6, bump_decay: 0.16, bump_beat: false, scene_fade: 1, scene_exclusive: false,
+  scenes: {}, scene_order: [], active_scenes: [], patterns: {}, pattern_order: [],
+  blackout: false, blinder: false, flash: false,
+});
+const palette = ref([]);
+const mults = ref([0.125, 0.25, 0.5, 1, 2, 4]);
+const manualTouched = {};  // lokale Änderungen (Pfad → Zeit) kurz vor Server-Echos schützen (Fader-Jitter)
+provide("manualTouched", manualTouched);
+provide("wsSend", (msg) => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify(msg));
+  return true;
+});
+// Server-Zustand feldweise übernehmen: frisch lokal geänderte Felder überspringen,
+// abgeleitete Farben (eff_*) immer übernehmen, gelöschte Szenen entfernen.
+function mergeState(target, src, path, now) {
+  const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+  for (const [k, v] of Object.entries(src)) {
+    const p = path ? `${path}.${k}` : k;
+    if (isObj(v)) {
+      if (!isObj(target[k])) target[k] = {};
+      mergeState(target[k], v, p, now);
+    } else if (k.startsWith("eff_") || !(now - (manualTouched[p] || 0) < 800)) {
+      target[k] = v;
+    }
+  }
+  if (path === "scenes" || path === "patterns") for (const k of Object.keys(target)) if (!(k in src)) delete target[k];
+}
+function applyManual(info) {
+  if (!info) return;
+  if (info.mode) mode.value = info.mode;
+  if (info.palette) palette.value = info.palette;
+  if (info.mults) mults.value = info.mults;
+  if (info.state) mergeState(manual, info.state, "", Date.now());
+}
+provide("applyManual", applyManual);
+async function setMode(m) {
+  mode.value = m;
+  if (m === "manual") view.value = "manual";
+  await fetch("/api/mode", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: m }),
+  });
+}
 
 const connected = ref(false);
 const analysis = reactive({
@@ -43,7 +94,13 @@ function connect() {
     } else if (m.type === "preview") preview.value = m.data;
     else if (m.type === "show") Object.assign(show, m.data);
     else if (m.type === "player") Object.assign(player, m.data);
-    else if (m.type === "status") { status.value = m.data; Object.assign(cfg, m.data.config); if (m.data.player) Object.assign(player, m.data.player); }
+    else if (m.type === "manual") applyManual(m.data);
+    else if (m.type === "status") {
+      status.value = m.data; Object.assign(cfg, m.data.config);
+      if (m.data.player) Object.assign(player, m.data.player);
+      applyManual(m.data.manual);
+      if (m.data.mode === "manual") view.value = "manual";
+    }
   };
 }
 async function loadConfig() {
@@ -107,20 +164,34 @@ const isSynthetic = computed(() => status.value?.audio_source === "synthetic");
        :style="{ background: dropFlash > 0.05 ? `rgba(217,70,239,${dropFlash * 0.15})` : 'transparent' }">
     <header class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold tracking-tight">Light<span class="text-fuchsia-500">Show</span></h1>
-      <div class="flex items-center gap-2 text-sm">
-        <span class="w-2.5 h-2.5 rounded-full" :class="connected ? 'bg-emerald-400' : 'bg-red-500'"></span>
-        {{ connected ? "verbunden" : "getrennt" }}
+      <div class="flex items-center gap-4 text-sm">
+        <!-- Betriebsart-Schalter -->
+        <div class="flex rounded-lg bg-white/10 p-1 font-semibold">
+          <button @click="setMode('auto')" class="px-3 py-1 rounded-md transition"
+                  :class="mode === 'auto' ? 'bg-emerald-500 text-black' : 'text-gray-300 hover:text-white'">AUTO</button>
+          <button @click="setMode('manual')" class="px-3 py-1 rounded-md transition"
+                  :class="mode === 'manual' ? 'bg-amber-400 text-black' : 'text-gray-300 hover:text-white'">MANUELL</button>
+        </div>
+        <span class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full" :class="connected ? 'bg-emerald-400' : 'bg-red-500'"></span>
+          <span class="hidden sm:inline">{{ connected ? "verbunden" : "getrennt" }}</span>
+        </span>
       </div>
     </header>
 
-    <!-- Tabs: Dashboard / Licht-Pult -->
+    <!-- Tabs: Dashboard / Manuell / Licht-Pult -->
     <div class="flex gap-2 mb-4">
       <button @click="view = 'dashboard'" class="px-4 py-1.5 rounded-lg text-sm font-medium"
               :class="view === 'dashboard' ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">Dashboard</button>
+      <button @click="view = 'manual'" class="px-4 py-1.5 rounded-lg text-sm font-medium"
+              :class="view === 'manual' ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">Manuell</button>
       <button @click="view = 'console'" class="px-4 py-1.5 rounded-lg text-sm font-medium"
               :class="view === 'console' ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">Licht-Pult</button>
     </div>
 
+    <Manual v-if="view === 'manual'" :mode="mode" :state="manual" :palette="palette" :preview="preview"
+            :mults="mults" :bpm-eff="mode === 'manual' ? show.bpm_eff || 0 : 0"
+            :music-bpm="analysis.bpm" @set-mode="setMode" />
     <Console v-show="view === 'console'" />
 
     <div v-show="view === 'dashboard'">

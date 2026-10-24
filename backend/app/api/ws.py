@@ -57,7 +57,16 @@ class WsHub:
             self.state.show.set_base_hue(float(msg["hue"]))
         elif action == "player":
             await self.state.player_command(msg.get("cmd", ""), msg.get("value"))
-        # weitere Kommandos folgen in Slice 3 (Pult, HA-Buttons)
+        elif action == "set_mode":
+            self.state.set_mode(msg.get("mode", "auto"))
+        elif action == "manual":
+            self.state.manual_update(msg.get("changes", {}))
+        elif action == "scene":
+            self.state.scene_op(str(msg.get("op", "")), str(msg.get("id", "")),
+                                **{k: v for k, v in msg.items() if k in ("name", "from_live", "changes", "on", "delta")})
+        elif action == "pattern":
+            self.state.pattern_op(str(msg.get("op", "")), str(msg.get("id", "")),
+                                  **{k: v for k, v in msg.items() if k in ("name", "changes")})
 
     async def _pump(self) -> None:
         bus = self.state.bus
@@ -66,6 +75,7 @@ class WsHub:
         sub_show = bus.subscribe("show.status", maxsize=4)
         sub_player = bus.subscribe("player.state", maxsize=8)
         sub_status = bus.subscribe("system.status", maxsize=16)
+        sub_manual = bus.subscribe("manual.state", maxsize=8)
 
         async def forward(sub, wrap) -> None:
             async for item in sub:
@@ -77,6 +87,7 @@ class WsHub:
             forward(sub_show, lambda s: {"type": "show", "data": s}),
             forward(sub_player, lambda p: {"type": "player", "data": p}),
             forward(sub_status, lambda s: {"type": "task", "data": s}),
+            forward(sub_manual, lambda m: {"type": "manual", "data": m}),
         )
 
     async def _broadcast(self, payload: dict) -> None:

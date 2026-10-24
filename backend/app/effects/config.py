@@ -15,8 +15,11 @@ import yaml
 
 @dataclass
 class ShowConfig:
+    # Betriebsart: auto = audio-gesteuerte Show, manual = Live-Pult (ManualEngine)
+    mode: str = "auto"
+
     # § 1 Grundverhalten
-    intensity: float = 0.6          # 0 ruhig … 1 aggressiv (Obergrenze)
+    intensity: float = 0.6         # 0 ruhig … 1 aggressiv (Obergrenze)
     brightness: float = 1.0         # globaler Master-Dimmer
     smoothing: float = 0.5          # Anti-Flicker 0…0.95
     album_art_color: bool = True    # Cover-Farbe als Basis (Slice 2: MASS)
