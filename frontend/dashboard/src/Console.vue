@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue";
+import { Undo2, Redo2, Pencil, Plus, X, LayoutGrid } from "lucide-vue-next";
 
 const layout = reactive({ columns: 6, controls: [] });
 const canUndo = ref(false);
@@ -105,76 +106,78 @@ onMounted(load);
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center justify-between mb-4">
-      <div class="text-xs uppercase text-gray-400">Digitales Licht-Pult</div>
-      <div class="flex gap-2">
-        <button @click="undo" :disabled="!canUndo"
-                class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 text-sm">↶ Undo</button>
-        <button @click="redo" :disabled="!canRedo"
-                class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 text-sm">↷ Redo</button>
-        <button @click="editMode = !editMode"
-                class="px-3 py-1.5 rounded-lg text-sm"
-                :class="editMode ? 'bg-fuchsia-600' : 'bg-white/10 hover:bg-white/20'">
-          {{ editMode ? "Fertig" : "Bearbeiten" }}</button>
-        <button v-if="editMode" @click="showAdd = true"
-                class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm">+ Hinzufügen</button>
+  <div class="space-y-4">
+    <div class="flex flex-wrap items-center gap-2">
+      <div>
+        <div class="text-[15px] font-medium">Pult</div>
+        <div class="text-[12px] text-muted">Eigene Buttons, Fader und XY-Pads für häufige Aktionen.</div>
+      </div>
+      <div class="ml-auto flex items-center gap-1.5">
+        <button @click="undo" :disabled="!canUndo" class="btn btn-sm btn-ghost btn-icon" title="Rückgängig"><Undo2 /></button>
+        <button @click="redo" :disabled="!canRedo" class="btn btn-sm btn-ghost btn-icon" title="Wiederholen"><Redo2 /></button>
+        <button v-if="editMode" @click="showAdd = true" class="btn btn-sm"><Plus />Hinzufügen</button>
+        <button @click="editMode = !editMode" class="btn btn-sm" :class="editMode ? 'btn-primary' : ''">
+          <Pencil v-if="!editMode" />{{ editMode ? "Fertig" : "Bearbeiten" }}</button>
       </div>
     </div>
 
     <div class="grid gap-3" :style="{ gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))` }">
       <div v-for="(c, i) in layout.controls" :key="c.id"
            :draggable="editMode" @dragstart="onDragStart(i)" @dragover.prevent @drop="onDrop(i)"
-           class="relative rounded-xl bg-white/5 ring-1 ring-white/10 p-3 min-h-[90px] flex flex-col"
-           :class="editMode ? 'cursor-move' : ''">
-        <button v-if="editMode" @click="removeControl(i)"
-                class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-xs">×</button>
-        <div class="text-xs text-gray-300 mb-2 truncate">{{ c.label }}</div>
+           class="panel relative p-3 min-h-[96px] flex flex-col gap-2"
+           :class="editMode ? 'cursor-move !border-dashed !border-line-strong' : ''">
+        <button v-if="editMode" @click="removeControl(i)" title="Entfernen"
+                class="absolute top-1.5 right-1.5 btn btn-ghost btn-sm btn-icon hover:!text-danger"><X /></button>
+        <div class="text-[12px] text-sub truncate pr-6">{{ c.label }}</div>
 
         <button v-if="c.type === 'button'" @click="!editMode && trigger(c.action)"
-                class="flex-1 rounded-lg bg-fuchsia-600/80 hover:bg-fuchsia-500 active:scale-95 transition text-sm font-medium">
+                class="flex-1 rounded-[7px] border border-line-strong bg-raised text-[13px] font-medium hover:bg-hover active:bg-accent active:text-accent-ink active:border-transparent transition-colors">
           Auslösen</button>
 
-        <input v-else-if="c.type === 'fader'" type="range"
-               :min="c.bind.type === 'base_hue' ? 0 : 0" :max="1" step="0.01"
-               @input="faderInput(c, $event)" :disabled="editMode"
-               class="mt-auto w-full accent-fuchsia-500" />
+        <input v-else-if="c.type === 'fader'" v-fill type="range" min="0" max="1" step="0.01" value="0"
+               @input="faderInput(c, $event)" :disabled="editMode" class="mt-auto" />
 
         <div v-else-if="c.type === 'xy'" @pointermove="!editMode && ($event.buttons && xyMove(c, $event))"
              @pointerdown="!editMode && xyMove(c, $event)"
-             class="flex-1 rounded-lg bg-black/40 relative overflow-hidden touch-none">
-          <div class="absolute w-3 h-3 rounded-full bg-fuchsia-400 -translate-x-1/2 -translate-y-1/2"
+             class="flex-1 min-h-[80px] rounded-[7px] bg-canvas border border-line relative overflow-hidden touch-none"
+             style="background-image: linear-gradient(var(--color-line) 1px, transparent 1px), linear-gradient(90deg, var(--color-line) 1px, transparent 1px); background-size: 25% 25%;">
+          <div class="absolute w-3 h-3 rounded-full bg-accent shadow-[0_0_10px_var(--color-accent)] -translate-x-1/2 -translate-y-1/2"
                :style="{ left: (c._x ?? 0.5) * 100 + '%', top: (1 - (c._y ?? 0.5)) * 100 + '%' }"></div>
         </div>
       </div>
 
-      <div v-if="!layout.controls.length" class="col-span-full text-sm text-gray-500 py-8 text-center">
-        Noch leer. „Bearbeiten" → „+ Hinzufügen", um Buttons/Fader/XY-Pads anzulegen.
+      <div v-if="!layout.controls.length" class="col-span-full panel border-dashed py-12 flex flex-col items-center gap-2 text-center">
+        <LayoutGrid class="w-5 h-5 text-faint" />
+        <div class="text-[13px] text-sub">Das Pult ist noch leer.</div>
+        <div class="text-[12px] text-muted">Über „Bearbeiten" → „Hinzufügen" Buttons, Fader oder XY-Pads anlegen.</div>
       </div>
     </div>
 
     <!-- Hinzufügen-Dialog -->
-    <div v-if="showAdd" class="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"
-         @click.self="showAdd = false">
-      <div class="bg-neutral-900 rounded-xl p-5 w-full max-w-sm ring-1 ring-white/10">
-        <div class="text-sm font-medium mb-3">Control hinzufügen</div>
-        <label class="block text-xs text-gray-400 mb-1">Typ</label>
-        <select v-model="addType" @change="addPreset = 0"
-                class="w-full mb-3 px-2 py-1.5 rounded bg-black/40 text-sm">
-          <option value="button">Button</option>
-          <option value="fader">Fader</option>
-          <option value="xy">XY-Pad</option>
-        </select>
-        <label class="block text-xs text-gray-400 mb-1">Funktion</label>
-        <select v-model.number="addPreset" class="w-full mb-4 px-2 py-1.5 rounded bg-black/40 text-sm">
-          <option v-for="(p, idx) in PRESETS[addType]" :key="idx" :value="idx">{{ p.label }}</option>
-        </select>
-        <p v-if="PRESETS[addType][addPreset]?.hint" class="text-xs text-amber-300 mb-3">
-          Hinweis: {{ PRESETS[addType][addPreset].hint }} (danach im JSON/späteren Editor anpassbar)
-        </p>
-        <div class="flex justify-end gap-2">
-          <button @click="showAdd = false" class="px-3 py-1.5 rounded bg-white/10 text-sm">Abbrechen</button>
-          <button @click="addControl" class="px-3 py-1.5 rounded bg-fuchsia-600 text-sm">Hinzufügen</button>
+    <div v-if="showAdd" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px] flex items-center justify-center p-4" @click.self="showAdd = false">
+      <div class="panel w-full max-w-sm shadow-2xl shadow-black/60">
+        <div class="panel-h"><span class="text-[13px] font-medium">Control hinzufügen</span>
+          <button @click="showAdd = false" class="btn btn-ghost btn-sm btn-icon ml-auto"><X /></button></div>
+        <div class="p-4 space-y-3">
+          <div>
+            <div class="text-[12px] text-muted mb-1.5">Typ</div>
+            <div class="seg seg-fill">
+              <button v-for="t in [['button', 'Button'], ['fader', 'Fader'], ['xy', 'XY-Pad']]" :key="t[0]"
+                      :class="{ on: addType === t[0] }" @click="addType = t[0]; addPreset = 0">{{ t[1] }}</button>
+            </div>
+          </div>
+          <label class="block">
+            <div class="text-[12px] text-muted mb-1.5">Funktion</div>
+            <select v-model.number="addPreset" class="field w-full">
+              <option v-for="(p, idx) in PRESETS[addType]" :key="idx" :value="idx">{{ p.label }}</option>
+            </select>
+          </label>
+          <p v-if="PRESETS[addType][addPreset]?.hint" class="text-[12px] text-accent">
+            {{ PRESETS[addType][addPreset].hint }} — danach in <span class="num">data/console.json</span> anpassbar.</p>
+          <div class="flex justify-end gap-2 pt-1">
+            <button @click="showAdd = false" class="btn btn-sm btn-ghost">Abbrechen</button>
+            <button @click="addControl" class="btn btn-sm btn-primary">Hinzufügen</button>
+          </div>
         </div>
       </div>
     </div>

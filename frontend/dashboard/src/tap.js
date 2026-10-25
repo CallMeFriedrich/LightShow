@@ -13,5 +13,5 @@ export function createTapper(onTap, { maxTaps = 6, resetMs = 2500 } = {}) {
   };
 }
 
-export const MULT_LABELS = { 0.125: "⅛", 0.25: "¼", 0.5: "½", 1: "1", 2: "2", 4: "4" };
+export const MULT_LABELS = { 0.125: "1/8", 0.25: "1/4", 0.5: "1/2", 1: "1", 2: "2", 4: "4" };
 export const fmtHz = (hz) => (hz >= 10 ? hz.toFixed(0) : hz >= 1 ? hz.toFixed(1) : hz.toFixed(2));

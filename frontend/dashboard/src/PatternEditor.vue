@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import ColorPicker from "./ColorPicker.vue";
 import { hsvToRgb, rgbCss, accentOf } from "./color.js";
+import { Grid3x3, Play, Copy, Trash2, ArrowLeft, ArrowRight, ArrowUp, X, Plus, FlipHorizontal2, Repeat, Minus } from "lucide-vue-next";
 
 // Muster-Sequenzer: Raster aus Schritten (Zeilen) × Segmenten (Spalten) bemalen.
 const props = defineProps({
@@ -25,7 +26,7 @@ const brush = ref("base");                       // null = Radierer
 const customColor = ref([0.83, 1]);
 const showCustom = ref(false);
 const BRUSHES = computed(() => [
-  { v: null, label: "Aus", css: "#000" },
+  { v: null, label: "", title: "Radierer (aus)", css: "#000" },
   { v: "base", label: "G", title: "Grundfarbe (passt sich der Szene an)", css: rgbCss(...base.value) },
   { v: "accent", label: "A", title: "Akzent (passt sich der Szene an)", css: rgbCss(...accent.value) },
   ...props.palette.map((p) => ({ v: [p.hue, p.saturation], title: p.name, css: rgbCss(p.hue, p.saturation) })),
@@ -109,102 +110,112 @@ onUnmounted(() => { cancelAnimationFrame(raf); window.removeEventListener("keydo
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/75 z-50 overflow-auto p-2 sm:p-6" @click.self="emit('close')">
-    <div class="max-w-5xl mx-auto bg-neutral-900 rounded-xl ring-1 ring-white/10 p-4 space-y-4">
+  <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px] overflow-auto p-2 sm:p-6" @click.self="emit('close')">
+    <div class="panel max-w-5xl mx-auto shadow-2xl shadow-black/60">
       <!-- Kopf -->
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-xl">🧩</span>
-        <input :value="pattern.name" @change="emit('change', { name: $event.target.value })"
-               class="px-2 py-1 rounded bg-black/40 font-semibold w-48" />
-        <span class="text-xs text-gray-500">Muster-Editor</span>
-        <div class="ml-auto flex gap-2">
-          <button @click="emit('test', !liveLayer.on)" class="px-3 py-1.5 rounded-lg text-sm font-semibold ring-1"
-                  :class="liveLayer.on ? 'bg-emerald-500 text-black ring-emerald-200' : 'bg-white/5 ring-white/20'">
-            {{ liveLayer.on ? "● läuft auf LEDs" : "▶ Auf LEDs testen" }}</button>
-          <button @click="emit('duplicate')" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">Kopie</button>
-          <button @click="emit('delete')" class="px-3 py-1.5 rounded-lg bg-red-500/30 hover:bg-red-500/50 text-sm">Löschen</button>
-          <button @click="emit('close')" class="px-4 py-1.5 rounded-lg bg-cyan-500 text-black text-sm font-semibold">Fertig</button>
+      <div class="panel-h flex-wrap py-2.5">
+        <Grid3x3 class="w-4 h-4 text-muted" />
+        <input :value="pattern.name" @change="emit('change', { name: $event.target.value })" class="field !h-8 w-52 font-medium" />
+        <span class="eyebrow hidden sm:inline">Muster-Editor</span>
+        <div class="ml-auto flex items-center gap-1.5">
+          <button @click="emit('test', !liveLayer.on)" class="btn btn-sm" :class="liveLayer.on ? '!border-live/60 !text-live' : ''">
+            <span v-if="liveLayer.on" class="led live"></span><Play v-else />{{ liveLayer.on ? "Läuft auf LEDs" : "Auf LEDs testen" }}</button>
+          <button @click="emit('duplicate')" class="btn btn-sm btn-ghost" title="Kopie anlegen"><Copy />Kopie</button>
+          <button @click="emit('delete')" class="btn btn-sm btn-danger" title="Löschen"><Trash2 /></button>
+          <button @click="emit('close')" class="btn btn-sm btn-primary">Fertig</button>
         </div>
       </div>
 
-      <!-- Einstellungen -->
-      <div class="flex flex-wrap items-center gap-4 text-sm">
-        <div class="flex items-center gap-1">
-          <span class="text-gray-400 mr-1">Segmente</span>
-          <button @click="setSegments(pattern.segments - 1)" class="w-7 h-7 rounded bg-white/10">−</button>
-          <span class="w-8 text-center font-mono">{{ pattern.segments }}</span>
-          <button @click="setSegments(pattern.segments + 1)" class="w-7 h-7 rounded bg-white/10">+</button>
-          <button v-for="n in [4, 8, 16]" :key="n" @click="setSegments(n)"
-                  class="px-2 h-7 rounded text-xs ring-1" :class="pattern.segments === n ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">{{ n }}</button>
-        </div>
-        <div class="flex rounded-lg bg-black/30 p-0.5 text-xs font-semibold">
-          <span class="px-2 py-1 text-gray-400 font-normal">Übergang</span>
-          <button @click="emit('change', { transition: 'hard' })" class="px-2.5 py-1 rounded-md"
-                  :class="pattern.transition !== 'soft' ? 'bg-fuchsia-500 text-black' : 'text-gray-400'">Hart</button>
-          <button @click="emit('change', { transition: 'soft' })" class="px-2.5 py-1 rounded-md"
-                  :class="pattern.transition === 'soft' ? 'bg-fuchsia-500 text-black' : 'text-gray-400'">Weich</button>
-        </div>
-        <span class="text-xs text-gray-500">{{ steps.length }} Schritte · Tempo ×1 = ein Schritt pro Beat</span>
-      </div>
-
-      <!-- Vorschau -->
-      <div class="flex h-8 rounded-lg overflow-hidden ring-1 ring-white/10 bg-black">
-        <div v-for="(c, i) in preview" :key="i" class="flex-1 border-r border-black/60 last:border-0" :style="{ background: c }"></div>
-      </div>
-
-      <!-- Pinsel -->
-      <div>
-        <div class="text-xs text-gray-400 mb-2">Pinsel — antippen/ziehen malt, Tippen auf gleiche Farbe löscht</div>
-        <div class="flex flex-wrap gap-1.5 items-center">
-          <button v-for="(b, i) in BRUSHES" :key="i" @click="brush = b.v; showCustom = false" :title="b.title || b.label"
-                  class="w-9 h-9 rounded-md ring-2 text-xs font-bold flex items-center justify-center transition"
-                  :class="same(brush, b.v) ? 'ring-white scale-110' : 'ring-white/15'"
-                  :style="{ background: b.css, color: b.v == null ? '#888' : '#000' }">{{ b.label }}</button>
-          <button @click="showCustom = !showCustom; brush = [...customColor]"
-                  class="h-9 px-3 rounded-md ring-2 text-xs font-semibold"
-                  :class="showCustom ? 'ring-white' : 'ring-white/15'" :style="{ background: rgbCss(...customColor) }">
-            <span class="bg-black/50 px-1 rounded text-white">🎨 Eigene</span></button>
-        </div>
-        <div v-if="showCustom" class="max-w-md mt-3">
-          <ColorPicker :hue="customColor[0]" :saturation="customColor[1]" :palette="[]"
-                       @change="(c) => { customColor = [c.hue, c.saturation]; brush = [c.hue, c.saturation]; }" />
-        </div>
-      </div>
-
-      <!-- Raster -->
-      <div class="overflow-x-auto">
-        <div class="min-w-max select-none touch-none" @pointerdown="gridDown" @pointermove="gridMove"
-             @pointerup="gridUp" @pointercancel="gridUp">
-          <div v-for="(row, r) in steps" :key="r" class="flex items-center gap-1 mb-1">
-            <span class="w-6 text-right text-xs font-mono mr-1"
-                  :class="current === r ? 'text-emerald-300 font-bold' : 'text-gray-500'">{{ r + 1 }}</span>
-            <div class="flex gap-0.5 rounded p-0.5" :class="current === r ? 'bg-emerald-400/30' : ''">
-              <div v-for="(cell, c) in row" :key="c" :data-cell="1" :data-r="r" :data-c="c"
-                   class="w-7 h-7 sm:w-8 sm:h-8 rounded-sm ring-1 ring-white/10 cursor-pointer flex items-center justify-center text-[10px] font-bold text-black/60"
-                   :style="{ background: cellCss(cell) }">
-                {{ cell === "base" ? "G" : cell === "accent" ? "A" : "" }}</div>
+      <div class="p-4 space-y-5">
+        <!-- Einstellungen -->
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div class="flex items-center gap-2">
+            <span class="text-[12px] text-muted">Segmente</span>
+            <div class="flex items-center">
+              <button @click="setSegments(pattern.segments - 1)" class="btn btn-sm btn-icon !rounded-r-none"><Minus /></button>
+              <span class="num text-[13px] w-9 h-[26px] grid place-items-center border-y border-line-strong bg-canvas">{{ pattern.segments }}</span>
+              <button @click="setSegments(pattern.segments + 1)" class="btn btn-sm btn-icon !rounded-l-none"><Plus /></button>
             </div>
-            <div class="flex gap-0.5 ml-2" @pointerdown.stop>
-              <button @click="rowOp(r, 'dup')" title="Schritt duplizieren" class="w-7 h-7 rounded bg-white/5 hover:bg-white/15 text-xs">⧉</button>
-              <button @click="rowOp(r, 'left')" title="nach links schieben" class="w-7 h-7 rounded bg-white/5 hover:bg-white/15 text-xs">←</button>
-              <button @click="rowOp(r, 'right')" title="nach rechts schieben" class="w-7 h-7 rounded bg-white/5 hover:bg-white/15 text-xs">→</button>
-              <button @click="rowOp(r, 'up')" title="Schritt nach oben" class="w-7 h-7 rounded bg-white/5 hover:bg-white/15 text-xs" :disabled="r === 0">↑</button>
-              <button @click="rowOp(r, 'del')" title="Schritt löschen" class="w-7 h-7 rounded bg-red-500/20 hover:bg-red-500/40 text-xs" :disabled="steps.length < 2">✕</button>
+            <div class="seg">
+              <button v-for="n in [4, 8, 16]" :key="n" :class="{ on: pattern.segments === n }" @click="setSegments(n)"><span class="num">{{ n }}</span></button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-[12px] text-muted">Übergang</span>
+            <div class="seg">
+              <button :class="{ on: pattern.transition !== 'soft' }" @click="emit('change', { transition: 'hard' })">Hart</button>
+              <button :class="{ on: pattern.transition === 'soft' }" @click="emit('change', { transition: 'soft' })">Weich</button>
+            </div>
+          </div>
+          <span class="text-[11px] text-muted num ml-auto">{{ steps.length }} Schritte · ×1 = 1 Schritt pro Beat</span>
+        </div>
+
+        <!-- Vorschau -->
+        <div class="flex h-7 rounded-[5px] overflow-hidden bg-black border border-line">
+          <div v-for="(c, i) in preview" :key="i" class="flex-1 border-r border-black/70 last:border-0" :style="{ background: c }"></div>
+        </div>
+
+        <!-- Pinsel -->
+        <div>
+          <div class="text-[11px] text-muted mb-2">Pinsel · tippen oder ziehen malt, gleiche Farbe nochmal tippen löscht</div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button v-for="(b, i) in BRUSHES" :key="i" @click="brush = b.v; showCustom = false" :title="b.title || b.label"
+                    class="w-8 h-8 rounded-[6px] text-[11px] font-semibold grid place-items-center transition"
+                    :class="[same(brush, b.v) ? 'ring-2 ring-ink ring-offset-2 ring-offset-panel' : 'ring-1 ring-inset ring-white/10 hover:scale-105',
+                             b.v == null ? 'eraser' : '']"
+                    :style="{ background: b.css, color: '#000c' }">{{ b.label }}</button>
+            <span class="w-px h-6 bg-line mx-1"></span>
+            <button @click="showCustom = !showCustom; brush = [...customColor]" class="btn btn-sm" :class="{ 'is-on': showCustom }">
+              <span class="w-3.5 h-3.5 rounded-[3px] ring-1 ring-inset ring-black/40" :style="{ background: rgbCss(...customColor) }"></span>Eigene Farbe</button>
+          </div>
+          <div v-if="showCustom" class="max-w-md mt-3 p-3 rounded-lg border border-line bg-canvas/50">
+            <ColorPicker :hue="customColor[0]" :saturation="customColor[1]" :palette="[]"
+                         @change="(c) => { customColor = [c.hue, c.saturation]; brush = [c.hue, c.saturation]; }" />
+          </div>
+        </div>
+
+        <!-- Raster -->
+        <div class="overflow-x-auto -mx-1 px-1">
+          <div class="min-w-max select-none touch-none" @pointerdown="gridDown" @pointermove="gridMove"
+               @pointerup="gridUp" @pointercancel="gridUp">
+            <div v-for="(row, r) in steps" :key="r" class="flex items-center gap-2 mb-1">
+              <span class="w-6 text-right text-[11px] num" :class="current === r ? 'text-accent' : 'text-faint'">{{ r + 1 }}</span>
+              <div class="flex gap-[3px] p-[3px] rounded-[5px] transition-colors"
+                   :class="current === r ? 'bg-accent/15 ring-1 ring-accent/40' : 'ring-1 ring-transparent'">
+                <div v-for="(cell, c) in row" :key="c" :data-cell="1" :data-r="r" :data-c="c"
+                     class="cell w-7 h-7 sm:w-8 sm:h-8 rounded-[3px] cursor-pointer grid place-items-center text-[10px] font-semibold"
+                     :class="cell == null ? 'empty' : ''" :style="cell == null ? {} : { background: cellCss(cell) }">
+                  <span v-if="cell === 'base' || cell === 'accent'" class="text-black/55">{{ cell === "base" ? "G" : "A" }}</span></div>
+              </div>
+              <div class="flex gap-0.5 ml-1" @pointerdown.stop>
+                <button @click="rowOp(r, 'dup')" title="Schritt duplizieren" class="btn btn-ghost btn-sm btn-icon"><Copy /></button>
+                <button @click="rowOp(r, 'left')" title="Nach links schieben" class="btn btn-ghost btn-sm btn-icon"><ArrowLeft /></button>
+                <button @click="rowOp(r, 'right')" title="Nach rechts schieben" class="btn btn-ghost btn-sm btn-icon"><ArrowRight /></button>
+                <button @click="rowOp(r, 'up')" title="Schritt nach oben" class="btn btn-ghost btn-sm btn-icon" :disabled="r === 0"><ArrowUp /></button>
+                <button @click="rowOp(r, 'del')" title="Schritt löschen" class="btn btn-ghost btn-sm btn-icon hover:!text-danger" :disabled="steps.length < 2"><X /></button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="flex flex-wrap gap-2">
-        <button @click="addStep(false)" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm">+ Schritt</button>
-        <button @click="addStep(true)" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">+ Kopie vom letzten</button>
-        <button @click="mirrorAll" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">⇆ Alles spiegeln</button>
-        <button @click="reverseSteps" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm">↕ Rückwärts</button>
+        <div class="flex flex-wrap gap-1.5">
+          <button @click="addStep(false)" class="btn btn-sm"><Plus />Schritt</button>
+          <button @click="addStep(true)" class="btn btn-sm btn-ghost"><Copy />Letzten kopieren</button>
+          <button @click="mirrorAll" class="btn btn-sm btn-ghost"><FlipHorizontal2 />Spiegeln</button>
+          <button @click="reverseSteps" class="btn btn-sm btn-ghost"><Repeat />Rückwärts</button>
+        </div>
+        <p class="text-[11px] text-muted border-t border-line pt-3">
+          <span class="text-sub">G</span> / <span class="text-sub">A</span> = Grundfarbe / Akzent — passen sich den Farben der Szene an, in der das Muster läuft.
+          Tempo und Stärke stellst du wie bei allen Effekten an der Kachel ein.
+        </p>
       </div>
-      <p class="text-xs text-gray-500">
-        G / A = Grundfarbe / Akzent: passen sich automatisch an die Farben des Live-Pults bzw. der Szene an, in der das
-        Muster läuft. Tempo und Stärke stellst du wie bei allen Effekten an der Kachel ein.
-      </p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.cell { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35); }
+.cell.empty { background: var(--color-canvas); box-shadow: inset 0 0 0 1px var(--color-line); }
+.cell.empty:hover { box-shadow: inset 0 0 0 1px var(--color-line-strong); }
+.eraser { background: repeating-linear-gradient(135deg, #1a1a1e 0 4px, #0b0b0d 4px 8px) !important; }
+</style>

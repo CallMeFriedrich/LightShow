@@ -5,6 +5,11 @@ import SpeedControl from "./SpeedControl.vue";
 import PatternEditor from "./PatternEditor.vue";
 import { createTapper, MULT_LABELS, fmtHz } from "./tap.js";
 import { rgbCss, accentOf } from "./color.js";
+import {
+  Square, ChevronsRight, Ellipsis, Waves, Wind, Rainbow, RefreshCw, Sparkles, Siren, Blend, Grid3x3,
+  Power, Sun, Zap, Activity, Music2, Plus, Pencil, Settings2, Trash2, ArrowLeft, ArrowRight,
+  SlidersHorizontal, ChevronDown, Hand,
+} from "lucide-vue-next";
 
 const props = defineProps({
   mode: { type: String, default: "auto" },
@@ -21,22 +26,26 @@ const touched = inject("manualTouched");     // Pfad → Zeitpunkt lokaler Ände
 const applyManual = inject("applyManual");
 
 const EFFECTS = [
-  { id: "solid", label: "Solid", icon: "⬛", key: "1", kind: "Fläche" },
-  { id: "chase", label: "Chase", icon: "🏃", key: "2", kind: "Muster" },
-  { id: "theater", label: "Theater", icon: "🎭", key: "3", kind: "Muster" },
-  { id: "wave", label: "Welle", icon: "🌊", key: "4", kind: "Muster" },
-  { id: "breathe", label: "Atmen", icon: "💨", key: "5", kind: "Fläche" },
-  { id: "rainbow", label: "Regenbogen", icon: "🌈", key: "6", kind: "Fläche" },
-  { id: "cycle", label: "Farbwechsel", icon: "🔄", key: "7", kind: "Fläche" },
-  { id: "sparkle", label: "Funkeln", icon: "✨", key: "8", kind: "Muster" },
-  { id: "police", label: "Polizei", icon: "🚨", key: "9", kind: "Muster" },
-  { id: "gradient", label: "Verlauf", icon: "🌅", key: "0", kind: "Fläche" },
+  { id: "solid", label: "Solid", icon: Square, key: "1", kind: "Fläche" },
+  { id: "chase", label: "Chase", icon: ChevronsRight, key: "2", kind: "Muster" },
+  { id: "theater", label: "Theater", icon: Ellipsis, key: "3", kind: "Muster" },
+  { id: "wave", label: "Welle", icon: Waves, key: "4", kind: "Muster" },
+  { id: "breathe", label: "Atmen", icon: Wind, key: "5", kind: "Fläche" },
+  { id: "rainbow", label: "Regenbogen", icon: Rainbow, key: "6", kind: "Fläche" },
+  { id: "cycle", label: "Farbwechsel", icon: RefreshCw, key: "7", kind: "Fläche" },
+  { id: "sparkle", label: "Funkeln", icon: Sparkles, key: "8", kind: "Muster" },
+  { id: "police", label: "Polizei", icon: Siren, key: "9", kind: "Muster" },
+  { id: "gradient", label: "Verlauf", icon: Blend, key: "0", kind: "Fläche" },
 ];
 const TWO_COLOR = ["police", "gradient"];
 const HOLDS = [
-  { id: "blackout", label: "ALLES AUS", hint: "halten · Leertaste", cls: "bg-black ring-white/30", on: "bg-neutral-800 ring-red-500" },
-  { id: "blinder", label: "BLINDER", hint: "drücken · B", cls: "bg-amber-200/20 ring-amber-200/40", on: "bg-amber-100 text-black ring-amber-50" },
-  { id: "flash", label: "FLASH", hint: "halten · F", cls: "bg-fuchsia-600/30 ring-fuchsia-400/40", on: "bg-fuchsia-500 ring-fuchsia-200" },
+  { id: "blackout", label: "Alles aus", hint: "halten", key: "Leer", icon: Power },
+  { id: "blinder", label: "Blinder", hint: "Fade-out", key: "B", icon: Sun },
+  { id: "flash", label: "Flash", hint: "halten", key: "F", icon: Zap },
+];
+const KEYS = [
+  ["Leer", "Alles aus (halten)"], ["B", "Blinder"], ["F", "Flash (halten)"], ["Enter", "Bump"],
+  ["1–9 0", "Effekte an/aus"], ["T", "Tap"], ["S", "Strobe an/aus"],
 ];
 const held = reactive({ blackout: false, blinder: false, flash: false });
 const bpm = computed(() => props.bpmEff || props.state.bpm || 120);
@@ -71,7 +80,7 @@ const focus = ref("solid");                 // Effekt im Editor ("base" = Grundf
 const focused = computed(() => {
   if (focus.value.startsWith("p_")) {
     const pat = props.state.patterns?.[focus.value.slice(2)];
-    return { id: focus.value, label: pat?.name ?? "Muster", icon: "🧩", kind: "Muster", pattern: pat };
+    return { id: focus.value, label: pat?.name ?? "Muster", icon: Grid3x3, kind: "Muster", pattern: pat };
   }
   return EFFECTS.find((e) => e.id === focus.value) || EFFECTS[0];
 });
@@ -127,7 +136,7 @@ function lookCss(look) {
   if (!cols.length) return "#222";
   return cols.length === 1 ? cols[0] : `linear-gradient(90deg,${cols.join(",")})`;
 }
-const tempoBadge = (l) => (l.sync === false ? `${fmtHz(l.hz ?? 2)} Hz` : `♩×${MULT_LABELS[l.mult ?? 1] ?? l.mult}`);
+const tempoBadge = (l) => (l.sync === false ? `${fmtHz(l.hz ?? 2)} Hz` : `×${MULT_LABELS[l.mult ?? 1] ?? l.mult}`);
 
 // ── Eigene Muster (Sequenzer) ──
 const patterns = computed(() => (props.state.pattern_order || []).map((id) => props.state.patterns?.[id]).filter(Boolean));
@@ -211,234 +220,240 @@ onUnmounted(() => { releaseAll(); window.removeEventListener("keydown", kd); win
 <template>
   <div class="select-none space-y-4">
     <!-- Hinweis: Pult greift nur im Manuell-Modus -->
-    <div v-if="mode !== 'manual'"
-         class="px-4 py-3 rounded-lg bg-amber-500/15 ring-1 ring-amber-500/40 text-amber-200 text-sm flex items-center justify-between gap-3">
-      <span>Automatik ist aktiv — das Pult steuert die LEDs erst im Modus <b>Manuell</b>.</span>
-      <button @click="emit('set-mode', 'manual')"
-              class="px-3 py-1.5 rounded-lg bg-amber-500 text-black font-semibold whitespace-nowrap">Manuell übernehmen</button>
+    <div v-if="mode !== 'manual'" class="notice">
+      <Hand class="w-4 h-4 text-accent shrink-0" />
+      <span class="flex-1">Die Automatik steuert gerade die LEDs. Das Pult greift erst im Modus <span class="text-ink">Manuell</span>.</span>
+      <button @click="emit('set-mode', 'manual')" class="btn btn-primary btn-sm">Manuell übernehmen</button>
     </div>
 
-    <!-- LED-Preview -->
-    <div class="flex h-6 rounded-lg overflow-hidden ring-1 ring-white/10">
+    <!-- Ausgabe -->
+    <div class="flex h-5 rounded-[4px] overflow-hidden bg-black border border-line">
       <div v-for="(c, i) in preview" :key="i" class="flex-1" :style="{ background: c }"></div>
     </div>
 
-    <!-- Halte-Buttons + Bump -->
-    <div class="grid grid-cols-4 gap-3">
+    <!-- Pads: Halte-Buttons + Bump -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <button v-for="h in HOLDS" :key="h.id"
               @pointerdown.prevent="$event.currentTarget.setPointerCapture?.($event.pointerId); hold(h.id, true)"
               @pointerup="hold(h.id, false)" @pointercancel="hold(h.id, false)" @lostpointercapture="hold(h.id, false)"
               @contextmenu.prevent
-              class="h-20 sm:h-24 rounded-xl ring-2 font-bold text-lg sm:text-xl tracking-wide transition touch-none flex flex-col items-center justify-center"
-              :class="held[h.id] || state[h.id] ? h.on + ' scale-95' : h.cls">
-        {{ h.label }}
-        <span class="text-[10px] font-normal opacity-60 mt-1">{{ h.hint }}</span>
+              class="pad" :class="(held[h.id] || state[h.id]) && 'held-' + h.id">
+        <div class="flex items-start justify-between w-full"><component :is="h.icon" /><span class="kbd">{{ h.key }}</span></div>
+        <div><div class="pad-label">{{ h.label }}</div><div class="pad-hint">{{ h.hint }}</div></div>
       </button>
-      <button :key="bumpKey" @pointerdown.prevent="bump" @contextmenu.prevent
-              class="bump h-20 sm:h-24 rounded-xl ring-2 ring-sky-300/50 bg-sky-400/20 font-bold text-lg sm:text-xl tracking-wide touch-none flex flex-col items-center justify-center active:scale-95 transition">
-        BUMP
-        <span class="text-[10px] font-normal opacity-60 mt-1">tippen · Enter</span>
+      <button :key="bumpKey" @pointerdown.prevent="bump" @contextmenu.prevent class="pad" :class="{ 'bump-hit': bumpKey }">
+        <div class="flex items-start justify-between w-full"><Activity /><span class="kbd">Enter</span></div>
+        <div><div class="pad-label">Bump</div><div class="pad-hint">tippen</div></div>
       </button>
     </div>
 
     <!-- Tempo · Strobe · Dimmer -->
     <div class="grid lg:grid-cols-3 gap-4">
-      <div class="bg-white/5 rounded-xl p-4">
-        <div class="text-xs uppercase text-gray-400 mb-3">Globales Tempo</div>
-        <div class="flex items-stretch gap-3">
-          <button @pointerdown.prevent="tapGlobal"
-                  class="w-24 h-24 rounded-xl bg-cyan-500/20 ring-2 ring-cyan-300/50 font-bold text-2xl active:bg-cyan-300 active:text-black touch-none">
-            TAP<span class="block text-[10px] font-normal opacity-60">im Takt · T</span></button>
-          <div class="flex-1 flex flex-col justify-between">
-            <div class="flex items-center gap-2">
-              <span :key="beatKey" class="beat w-3 h-3 rounded-full bg-cyan-300"
-                    :style="{ animationDuration: 60 / bpm + 's' }"></span>
+      <section class="panel">
+        <div class="panel-h"><span class="eyebrow">Tempo</span>
+          <span :key="beatKey" class="led on beat ml-auto" :style="{ animationDuration: 60 / bpm + 's' }"></span></div>
+        <div class="p-4 flex gap-4">
+          <button @pointerdown.prevent="tapGlobal" class="pad !h-[112px] w-[104px] shrink-0 tap-pad">
+            <div class="flex justify-end w-full"><span class="kbd">T</span></div>
+            <div class="pad-label !text-[18px]">Tap</div>
+          </button>
+          <div class="flex-1 min-w-0 flex flex-col justify-between gap-2">
+            <div class="flex items-baseline gap-1.5">
               <input type="number" min="20" max="300" step="0.1" title="BPM eingeben (Enter)"
                      :value="bpmEdit ?? bpm.toFixed(1)"
                      @focus="bpmEdit = bpm.toFixed(1); $event.target.select()"
                      @input="bpmEdit = $event.target.value"
                      @keydown.enter="$event.target.blur()" @blur="commitBpm"
-                     class="bpm-input w-24 text-3xl font-mono bg-transparent rounded px-1 -mx-1 hover:bg-white/10 focus:bg-black/40 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
-              <span class="text-xs text-gray-400">BPM</span>
+                     class="no-spin display w-full min-w-0 text-[40px] leading-none bg-transparent rounded-md px-1.5 -mx-1.5 py-0.5 outline-none hover:bg-raised focus:bg-canvas focus:ring-1 focus:ring-accent" />
+              <span class="text-xs text-muted">BPM</span>
             </div>
-            <div class="flex gap-1">
-              <button @click="setBpm(bpm - 1)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">−1</button>
-              <button @click="setBpm(bpm + 1)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">+1</button>
-              <button @click="setBpm(bpm / 2)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">½×</button>
-              <button @click="setBpm(bpm * 2)" class="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-xs">2×</button>
+            <div class="grid grid-cols-4 gap-1">
+              <button @click="setBpm(bpm - 1)" class="btn btn-sm num">−1</button>
+              <button @click="setBpm(bpm + 1)" class="btn btn-sm num">+1</button>
+              <button @click="setBpm(bpm / 2)" class="btn btn-sm num">÷2</button>
+              <button @click="setBpm(bpm * 2)" class="btn btn-sm num">×2</button>
             </div>
-            <button @click="send({ music_sync: !state.music_sync })"
-                    class="py-1 rounded-lg ring-1 text-xs"
-                    :class="state.music_sync ? 'bg-emerald-600/40 ring-emerald-400/60' : 'bg-white/5 ring-white/10'">
-              🎵 Musik folgen {{ state.music_sync ? "AN" : "AUS" }}
-              <span class="text-gray-400">({{ musicBpm >= 40 ? musicBpm.toFixed(0) : "—" }})</span></button>
+            <button @click="send({ music_sync: !state.music_sync })" class="btn btn-sm w-full" :class="{ 'is-on': state.music_sync }">
+              <Music2 />Musik folgen
+              <span class="num ml-auto" :class="state.music_sync ? '' : 'text-muted'">{{ musicBpm >= 40 ? musicBpm.toFixed(0) : "—" }}</span></button>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="bg-white/5 rounded-xl p-4">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-xs uppercase text-gray-400">Strobe</span>
-          <button @click="send({ strobe_on: !state.strobe_on })"
-                  class="px-4 py-1.5 rounded-lg font-bold text-sm ring-2 transition"
-                  :class="state.strobe_on ? 'bg-yellow-300 text-black ring-yellow-100' : 'bg-white/5 ring-white/20'">
-            {{ state.strobe_on ? "AN" : "AUS" }} · S</button>
+      <section class="panel">
+        <div class="panel-h"><span class="eyebrow">Strobe</span>
+          <button @click="send({ strobe_on: !state.strobe_on })" class="btn btn-sm ml-auto" :class="{ 'is-on': state.strobe_on }">
+            <span class="led" :class="{ on: state.strobe_on }"></span>{{ state.strobe_on ? "An" : "Aus" }}<span class="kbd">S</span></button>
         </div>
-        <SpeedControl :sync="state.strobe_sync" :mult="state.strobe_mult" :hz="state.strobe_hz" :bpm="bpm"
-                      :min="0.5" :max="20" :mults="[0.25, 0.5, 1, 2, 4]"
-                      @change="(c) => send({ ...(c.sync !== undefined && { strobe_sync: c.sync }),
-                                             ...(c.mult !== undefined && { strobe_mult: c.mult }),
-                                             ...(c.hz !== undefined && { strobe_hz: c.hz }) })" />
-        <div class="flex gap-2 mt-3">
-          <button @click="send({ strobe_white: !state.strobe_white })" class="flex-1 py-1.5 rounded-lg text-xs ring-1"
-                  :class="state.strobe_white ? 'bg-white/30 ring-white/50' : 'bg-white/5 ring-white/10'">
-            {{ state.strobe_white ? "Weiß blitzen" : "Effekte takten" }}</button>
-          <button @click="send({ strobe_alt: !state.strobe_alt })" class="flex-1 py-1.5 rounded-lg text-xs ring-1"
-                  :class="state.strobe_alt ? 'bg-yellow-400/30 ring-yellow-300/60' : 'bg-white/5 ring-white/10'">
-            Strips abwechselnd</button>
+        <div class="p-4 space-y-3">
+          <SpeedControl :sync="state.strobe_sync" :mult="state.strobe_mult" :hz="state.strobe_hz" :bpm="bpm"
+                        :min="0.5" :max="20" :mults="[0.25, 0.5, 1, 2, 4]"
+                        @change="(c) => send({ ...(c.sync !== undefined && { strobe_sync: c.sync }),
+                                               ...(c.mult !== undefined && { strobe_mult: c.mult }),
+                                               ...(c.hz !== undefined && { strobe_hz: c.hz }) })" />
+          <div class="flex items-center gap-3 pt-1">
+            <div class="seg">
+              <button :class="{ on: state.strobe_white }" @click="send({ strobe_white: true })">Weiß</button>
+              <button :class="{ on: !state.strobe_white }" @click="send({ strobe_white: false })">Effekte takten</button>
+            </div>
+            <button @click="send({ strobe_alt: !state.strobe_alt })" class="ml-auto flex items-center gap-2 text-[12px] text-sub hover:text-ink">
+              <span class="switch" :class="{ on: state.strobe_alt }"></span>Abwechselnd</button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="bg-white/5 rounded-xl p-4">
-        <div class="flex justify-between text-xs uppercase text-gray-400 mb-3"><span>Dimmer</span>
-          <span class="font-mono text-white text-sm">{{ Math.round(state.brightness * 100) }}%</span></div>
-        <input type="range" min="0" max="1" step="0.01" :value="state.brightness"
-               @input="send({ brightness: +$event.target.value })" class="w-full accent-fuchsia-500 h-10" />
-        <div class="grid grid-cols-4 gap-1 mt-2">
-          <button v-for="v in [0.1, 0.25, 0.5, 1]" :key="v" @click="send({ brightness: v })"
-                  class="py-1.5 rounded bg-white/10 hover:bg-white/20 text-xs">{{ v * 100 }}%</button>
+      <section class="panel">
+        <div class="panel-h"><span class="eyebrow">Dimmer</span>
+          <span class="ml-auto display text-[17px]">{{ Math.round(state.brightness * 100) }}<span class="text-muted text-xs"> %</span></span></div>
+        <div class="p-4 space-y-3">
+          <input v-fill type="range" min="0" max="1" step="0.01" :value="state.brightness"
+                 @input="send({ brightness: +$event.target.value })" class="fader-lg" />
+          <div class="seg seg-fill">
+            <button v-for="v in [0.1, 0.25, 0.5, 1]" :key="v" :class="{ on: Math.abs(state.brightness - v) < 0.005 }"
+                    @click="send({ brightness: v })"><span class="num">{{ v * 100 }}</span></button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
 
     <!-- Szenen -->
-    <div class="bg-white/5 rounded-xl p-4">
-      <div class="flex flex-wrap items-center gap-2 mb-3">
-        <span class="text-xs uppercase text-gray-400 mr-auto">Szenen
-          <span class="normal-case">— eigene Effekt-Stapel, kombinierbar</span></span>
-        <div class="flex rounded-lg bg-black/30 p-0.5 text-xs font-semibold">
-          <button @click="send({ scene_exclusive: false })" class="px-2.5 py-1 rounded-md"
-                  :class="!state.scene_exclusive ? 'bg-fuchsia-500 text-black' : 'text-gray-400'">Stapeln</button>
-          <button @click="send({ scene_exclusive: true })" class="px-2.5 py-1 rounded-md"
-                  :class="state.scene_exclusive ? 'bg-fuchsia-500 text-black' : 'text-gray-400'">Einzeln</button>
+    <section class="panel">
+      <div class="panel-h flex-wrap py-2">
+        <span class="eyebrow">Szenen</span>
+        <span class="text-[11px] text-muted hidden sm:inline">eigene Effekt-Stapel</span>
+        <div class="ml-auto flex items-center gap-2">
+          <div class="seg">
+            <button :class="{ on: !state.scene_exclusive }" @click="send({ scene_exclusive: false })">Stapeln</button>
+            <button :class="{ on: state.scene_exclusive }" @click="send({ scene_exclusive: true })">Einzeln</button>
+          </div>
+          <button @click="createScene(true)" class="btn btn-sm btn-ghost">Aus Live</button>
+          <button @click="createScene(false)" class="btn btn-sm"><Plus />Neu</button>
         </div>
-        <button @click="createScene(false)" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold">+ Neue Szene</button>
-        <button @click="createScene(true)" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs">+ aus Live-Pult</button>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-        <div v-for="sc in scenes" :key="sc.id" class="relative rounded-lg ring-1 overflow-hidden transition"
-             :class="[isActive(sc.id) ? 'ring-fuchsia-300 bg-fuchsia-600/70' : 'ring-white/10 bg-white/5 hover:bg-white/15',
-                      editId === sc.id ? 'outline outline-2 outline-offset-2 outline-cyan-300' : '']">
-          <button @click="toggleScene(sc.id)" class="w-full pt-3 pb-4 px-2 text-sm font-semibold active:scale-95 transition">
-            {{ sc.name }}
-            <span class="block text-[10px] font-normal opacity-70">{{ isActive(sc.id) ? "AN" : "aus" }}</span>
+      <div class="p-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+        <div v-for="sc in scenes" :key="sc.id" class="tile !min-h-[66px]"
+             :class="{ on: isActive(sc.id), focus: editId === sc.id }">
+          <button @click="toggleScene(sc.id)" class="absolute inset-0 rounded-[8px]" :aria-pressed="isActive(sc.id)" :title="`${sc.name} an/aus`"></button>
+          <div class="flex items-center gap-2 pr-7 pointer-events-none">
+            <span class="led" :class="{ on: isActive(sc.id) }"></span>
+            <span class="text-[13px] font-medium truncate">{{ sc.name }}</span>
+          </div>
+          <div class="mt-auto h-[3px] rounded-full pointer-events-none" :style="{ background: lookCss(sc) }"></div>
+          <button @click.stop="editId = editId === sc.id ? null : sc.id" title="Szene bearbeiten"
+                  class="btn btn-ghost btn-sm btn-icon absolute top-1.5 right-1.5 z-[1]"><Pencil /></button>
+        </div>
+        <div v-if="!scenes.length" class="col-span-full text-[13px] text-muted py-4 text-center">Noch keine Szenen.</div>
+      </div>
+    </section>
+
+    <!-- Effekte (Live-Ebene oder Szene bearbeiten) -->
+    <section class="panel" :class="editScene ? '!border-accent/50' : ''">
+      <div v-if="editScene" class="panel-h flex-wrap py-2 bg-accent/[.05]">
+        <Pencil class="w-3.5 h-3.5 text-accent" />
+        <span class="eyebrow !text-accent">Szene bearbeiten</span>
+        <input :value="editScene.name" @change="sendTarget({ name: $event.target.value })" class="field !h-7 w-40" />
+        <label class="flex items-center gap-2 text-[12px] text-muted">Stärke
+          <input v-fill type="range" min="0" max="1" step="0.01" :value="editScene.level"
+                 @input="sendTarget({ level: +$event.target.value })" class="w-24" />
+          <span class="num text-sub w-12 whitespace-nowrap">{{ Math.round(editScene.level * 100) }} %</span></label>
+        <div class="ml-auto flex items-center gap-1">
+          <button @click="sceneOp('move', { id: editId, delta: -1 })" class="btn btn-ghost btn-sm btn-icon" title="Nach vorne"><ArrowLeft /></button>
+          <button @click="sceneOp('move', { id: editId, delta: 1 })" class="btn btn-ghost btn-sm btn-icon" title="Nach hinten"><ArrowRight /></button>
+          <button @click="deleteScene(editId)" class="btn btn-danger btn-sm"><Trash2 />Löschen</button>
+          <button @click="editId = null" class="btn btn-primary btn-sm">Fertig</button>
+        </div>
+      </div>
+      <div v-else class="panel-h">
+        <span class="eyebrow">Effekte</span>
+        <span class="text-[11px] text-muted">Live-Ebene · aktive Szenen laufen zusätzlich</span>
+      </div>
+
+      <div class="p-3 space-y-3">
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-11 gap-2">
+          <div v-for="e in EFFECTS" :key="e.id" class="tile" :class="{ on: layer(e.id).on, focus: focus === e.id }">
+            <button @click="toggleEffect(e.id)" class="absolute inset-0 rounded-[8px]" :aria-pressed="!!layer(e.id).on" :title="`${e.label} an/aus`"></button>
+            <div class="flex items-center gap-2 pointer-events-none">
+              <component :is="e.icon" class="w-4 h-4" :class="layer(e.id).on ? 'text-accent' : 'text-muted'" />
+              <span class="led ml-auto" :class="{ on: layer(e.id).on }"></span>
+            </div>
+            <div class="text-[13px] font-medium leading-none pointer-events-none">{{ e.label }}</div>
+            <div class="flex items-center gap-1.5 pointer-events-none">
+              <span class="num text-[10px] text-muted">{{ tempoBadge(layer(e.id)) }}</span>
+              <button @click.stop="focus = e.id" title="Farbe, Stärke, Tempo"
+                      class="ml-auto pointer-events-auto relative z-[1] w-4 h-4 rounded-[4px] ring-1 ring-inset ring-black/40 hover:scale-125 transition"
+                      :style="{ background: layerCss(e.id, target) }"></button>
+              <span class="kbd">{{ e.key }}</span>
+            </div>
+          </div>
+          <button @click="focus = 'base'" class="tile" :class="{ focus: focus === 'base' }">
+            <span class="w-4 h-4 rounded-full ring-1 ring-inset ring-black/40" :style="{ background: rgbCss(target.hue ?? 0, target.saturation ?? 1) }"></span>
+            <span class="text-[13px] font-medium leading-none">Grundfarbe</span>
+            <span class="text-[10px] text-muted">für Auto-Farben</span>
           </button>
-          <div class="absolute bottom-0 inset-x-0 h-1.5" :style="{ background: lookCss(sc) }"></div>
-          <button @click.stop="editId = editId === sc.id ? null : sc.id" title="Szene programmieren"
-                  class="absolute top-1 right-1 w-6 h-6 rounded-md bg-black/40 hover:bg-black/70 text-xs">✎</button>
         </div>
-        <div v-if="!scenes.length" class="col-span-full text-sm text-gray-500 py-4 text-center">
-          Noch keine Szenen — „+ Neue Szene" anlegen.</div>
-      </div>
-    </div>
 
-    <!-- Effekte (Live-Pult oder Szene programmieren) -->
-    <div class="rounded-xl p-4" :class="editScene ? 'bg-cyan-500/10 ring-2 ring-cyan-400/50' : 'bg-white/5'">
-      <div v-if="editScene" class="flex flex-wrap items-center gap-2 mb-3">
-        <span class="text-xs uppercase text-cyan-300">Szene programmieren:</span>
-        <input :value="editScene.name" @change="sendTarget({ name: $event.target.value })"
-               class="px-2 py-1 rounded bg-black/40 text-sm font-semibold w-40" />
-        <label class="flex items-center gap-2 text-xs text-gray-400">Szenen-Stärke
-          <input type="range" min="0" max="1" step="0.01" :value="editScene.level"
-                 @input="sendTarget({ level: +$event.target.value })" class="w-28 accent-cyan-400" />
-          <span class="font-mono w-9">{{ Math.round(editScene.level * 100) }}%</span></label>
-        <button @click="sceneOp('move', { id: editId, delta: -1 })" class="px-2 py-1 rounded bg-white/10 text-xs" title="nach vorne">◀</button>
-        <button @click="sceneOp('move', { id: editId, delta: 1 })" class="px-2 py-1 rounded bg-white/10 text-xs" title="nach hinten">▶</button>
-        <button @click="deleteScene(editId)" class="px-2 py-1 rounded bg-red-500/30 hover:bg-red-500/50 text-xs">Löschen</button>
-        <button @click="editId = null" class="ml-auto px-4 py-1.5 rounded-lg bg-cyan-500 text-black text-sm font-semibold">Fertig</button>
-      </div>
-      <div v-else class="flex justify-between text-xs uppercase text-gray-400 mb-3">
-        <span>Live-Effekte <span class="normal-case">— beliebig kombinierbar, Szenen laufen zusätzlich</span></span>
-        <span class="normal-case">✎ an einer Szene = Szene programmieren</span>
-      </div>
-
-      <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-11 gap-2">
-        <div v-for="e in EFFECTS" :key="e.id" class="relative rounded-lg ring-1 transition"
-             :class="[layer(e.id).on ? 'bg-fuchsia-600 ring-fuchsia-300' : 'bg-white/5 ring-white/10 hover:bg-white/15',
-                      focus === e.id ? 'outline outline-2 outline-offset-2 outline-white/70' : '']">
-          <button @click="toggleEffect(e.id)" class="w-full pt-3 pb-2 flex flex-col items-center gap-0.5 text-sm font-medium active:scale-95 transition">
-            <span class="text-xl">{{ e.icon }}</span>{{ e.label }}
-            <span class="text-[10px] opacity-70">{{ layer(e.id).on ? "AN" : "aus" }} · {{ tempoBadge(layer(e.id)) }}</span>
+        <!-- Eigene Muster -->
+        <div class="flex items-center gap-2 pt-1"><span class="eyebrow">Muster</span>
+          <span class="text-[11px] text-muted">selbst programmiert</span></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-11 gap-2">
+          <div v-for="pat in patterns" :key="pat.id" class="tile" :class="{ on: layer('p_' + pat.id).on, focus: focus === 'p_' + pat.id }">
+            <button @click="toggleEffect('p_' + pat.id)" class="absolute inset-0 rounded-[8px]" :aria-pressed="!!layer('p_' + pat.id).on" :title="`${pat.name} an/aus`"></button>
+            <div class="flex items-center gap-2 pointer-events-none">
+              <Grid3x3 class="w-4 h-4" :class="layer('p_' + pat.id).on ? 'text-accent' : 'text-muted'" />
+              <span class="led ml-auto" :class="{ on: layer('p_' + pat.id).on }"></span>
+            </div>
+            <div class="text-[13px] font-medium leading-none truncate pointer-events-none">{{ pat.name }}</div>
+            <div class="flex items-center gap-1 pointer-events-none">
+              <span class="num text-[10px] text-muted">{{ tempoBadge(layer('p_' + pat.id)) }}</span>
+              <button @click.stop="focus = 'p_' + pat.id" title="Stärke, Tempo"
+                      class="ml-auto pointer-events-auto relative z-[1] text-muted hover:text-ink"><Settings2 class="w-3.5 h-3.5" /></button>
+              <button @click.stop="editPatternId = pat.id; focus = 'p_' + pat.id" title="Muster bearbeiten"
+                      class="pointer-events-auto relative z-[1] text-muted hover:text-ink"><Pencil class="w-3.5 h-3.5" /></button>
+            </div>
+            <div class="absolute inset-x-[11px] bottom-[5px] h-[2px] rounded-full opacity-80 pointer-events-none" :style="{ background: patternCss(pat, target) }"></div>
+          </div>
+          <button @click="createPattern()" class="tile items-center justify-center !border-dashed text-muted hover:text-ink">
+            <Plus class="w-4 h-4" /><span class="text-[12px]">Neues Muster</span>
           </button>
-          <button @click.stop="focus = e.id" title="Farbe, Stärke & Tempo"
-                  class="absolute top-1.5 right-1.5 w-5 h-5 rounded-full ring-2 ring-black/60"
-                  :style="{ background: layerCss(e.id, target) }"></button>
         </div>
-        <button @click="focus = 'base'" class="rounded-lg ring-1 py-3 flex flex-col items-center gap-1 text-sm font-medium"
-                :class="focus === 'base' ? 'outline outline-2 outline-offset-2 outline-white/70 ring-white/30 bg-white/10' : 'ring-white/10 bg-white/5 hover:bg-white/15'">
-          <span class="w-6 h-6 rounded-full ring-2 ring-black/60" :style="{ background: rgbCss(target.hue ?? 0, target.saturation ?? 1) }"></span>
-          Grundfarbe<span class="text-[10px] opacity-60">für Auto-Farben</span>
-        </button>
       </div>
 
-      <!-- Eigene Muster -->
-      <div class="flex items-center gap-2 mt-4 mb-2 text-xs uppercase text-gray-400">
-        <span>Eigene Muster</span><span class="normal-case">— im Muster-Editor selbst programmiert</span></div>
-      <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-11 gap-2">
-        <div v-for="pat in patterns" :key="pat.id" class="relative rounded-lg ring-1 transition overflow-hidden"
-             :class="[layer('p_' + pat.id).on ? 'bg-fuchsia-600 ring-fuchsia-300' : 'bg-white/5 ring-white/10 hover:bg-white/15',
-                      focus === 'p_' + pat.id ? 'outline outline-2 outline-offset-2 outline-white/70' : '']">
-          <button @click="toggleEffect('p_' + pat.id)" class="w-full pt-3 pb-3 px-1 flex flex-col items-center gap-0.5 text-sm font-medium active:scale-95 transition">
-            <span class="text-xl">🧩</span><span class="truncate max-w-full">{{ pat.name }}</span>
-            <span class="text-[10px] opacity-70">{{ layer('p_' + pat.id).on ? "AN" : "aus" }} · {{ tempoBadge(layer('p_' + pat.id)) }}</span>
-          </button>
-          <div class="absolute bottom-0 inset-x-0 h-1.5" :style="{ background: patternCss(pat, target) }"></div>
-          <button @click.stop="focus = 'p_' + pat.id" title="Stärke & Tempo"
-                  class="absolute top-1 left-1 w-6 h-6 rounded-md bg-black/40 hover:bg-black/70 text-xs">⚙</button>
-          <button @click.stop="editPatternId = pat.id; focus = 'p_' + pat.id" title="Muster bearbeiten"
-                  class="absolute top-1 right-1 w-6 h-6 rounded-md bg-black/40 hover:bg-black/70 text-xs">✎</button>
-        </div>
-        <button @click="createPattern()" class="rounded-lg ring-1 ring-dashed ring-emerald-400/50 bg-emerald-500/10 hover:bg-emerald-500/20 py-3 flex flex-col items-center gap-1 text-sm font-medium">
-          <span class="text-xl">＋</span>Neues Muster</button>
-      </div>
-
-      <!-- Editor des gewählten Effekts -->
-      <div class="mt-4 pt-4 border-t border-white/10">
+      <!-- Einstellungen des gewählten Effekts -->
+      <div class="border-t border-line p-4">
         <div v-if="focus === 'base'" class="max-w-xl">
-          <div class="text-sm font-semibold mb-1">🎨 Grundfarbe</div>
-          <p class="text-xs text-gray-400 mb-3">Flächen mit Auto-Farbe nehmen diese Farbe, Muster eine passende Akzentfarbe dazu.
-            {{ editScene ? "" : "FLASH blitzt in dieser Farbe." }}</p>
-          <ColorPicker :hue="target.hue" :saturation="target.saturation" :palette="palette"
-                       @change="(c) => sendTarget(c)" />
+          <div class="text-[13px] font-medium mb-1">Grundfarbe</div>
+          <p class="text-[12px] text-muted mb-3">Flächen mit Auto-Farbe übernehmen sie, Muster bekommen eine passende Akzentfarbe.
+            {{ editScene ? "" : "Flash blitzt in dieser Farbe." }}</p>
+          <ColorPicker :hue="target.hue" :saturation="target.saturation" :palette="palette" @change="(c) => sendTarget(c)" />
         </div>
-        <div v-else class="grid lg:grid-cols-2 gap-6">
+        <div v-else class="grid lg:grid-cols-2 gap-x-8 gap-y-6">
           <div v-if="focused.pattern">
-            <div class="text-sm font-semibold mb-2">🧩 {{ focused.label }}</div>
-            <p class="text-xs text-gray-400 mb-3">{{ focused.pattern.segments }} Segmente · {{ focused.pattern.steps.length }} Schritte ·
-              Übergang {{ focused.pattern.transition === "soft" ? "weich" : "hart" }}</p>
-            <div class="h-6 rounded mb-3 ring-1 ring-white/10" :style="{ background: patternCss(focused.pattern, target) }"></div>
-            <button @click="editPatternId = focused.pattern.id"
-                    class="px-4 py-2 rounded-lg bg-cyan-500 text-black font-semibold text-sm">✎ Muster bearbeiten</button>
+            <div class="flex items-center gap-2 mb-1"><Grid3x3 class="w-4 h-4 text-muted" />
+              <span class="text-[13px] font-medium">{{ focused.label }}</span></div>
+            <p class="text-[12px] text-muted mb-3 num">{{ focused.pattern.segments }} Segmente · {{ focused.pattern.steps.length }} Schritte ·
+              {{ focused.pattern.transition === "soft" ? "weich" : "hart" }}</p>
+            <div class="h-5 rounded-[4px] mb-4 border border-line" :style="{ background: patternCss(focused.pattern, target) }"></div>
+            <button @click="editPatternId = focused.pattern.id" class="btn btn-primary"><Pencil />Muster bearbeiten</button>
           </div>
           <div v-else>
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-sm font-semibold">{{ focused.icon }} {{ focused.label }} — Farbe</span>
+            <div class="flex items-center gap-2 mb-3">
+              <component :is="focused.icon" class="w-4 h-4 text-muted" />
+              <span class="text-[13px] font-medium">{{ focused.label }}</span>
+              <span class="text-[12px] text-muted">Farbe</span>
               <button v-if="focus !== 'rainbow'" @click="sendLayer(focus, { color_auto: !layer(focus).color_auto })"
-                      class="px-3 py-1 rounded-lg ring-1 text-xs"
-                      :class="layer(focus).color_auto ? 'bg-emerald-600/40 ring-emerald-400/60' : 'bg-white/5 ring-white/10'">
-                Auto-Farbe {{ layer(focus).color_auto ? "AN" : "AUS" }}</button>
+                      class="btn btn-sm ml-auto" :class="{ 'is-on': layer(focus).color_auto }">Auto-Farbe</button>
             </div>
-            <p v-if="focus === 'rainbow'" class="text-sm text-gray-400">Regenbogen nutzt alle Farben.</p>
+            <p v-if="focus === 'rainbow'" class="text-[12px] text-muted">Regenbogen nutzt das ganze Spektrum.</p>
             <template v-else>
-              <p v-if="layer(focus).color_auto" class="text-xs text-gray-400 mb-2">
-                Automatisch {{ focused.kind === "Fläche" ? "die Grundfarbe" : "passend zur Grundfarbe" }} — Farbe antippen für eine eigene.</p>
-              <div v-if="TWO_COLOR.includes(focus)" class="text-xs text-gray-400 mb-1">
-                Farbe 1 {{ focus === "police" ? "(Segmente 1, 3, …)" : "(Anfang)" }}</div>
+              <p v-if="layer(focus).color_auto" class="text-[12px] text-muted mb-3">
+                Folgt {{ focused.kind === "Fläche" ? "der Grundfarbe" : "der Akzentfarbe zur Grundfarbe" }}. Eine Farbe wählen schaltet auf eigene Farbe.</p>
+              <div v-if="TWO_COLOR.includes(focus)" class="text-[11px] text-muted mb-1.5">
+                Farbe 1 · {{ focus === "police" ? "Segmente 1, 3, …" : "Anfang" }}</div>
               <ColorPicker :hue="layer(focus).color_auto ? layer(focus).eff_hue ?? 0 : layer(focus).hue"
                            :saturation="layer(focus).color_auto ? layer(focus).eff_saturation ?? 1 : layer(focus).saturation"
                            :palette="palette" @change="(c) => sendLayer(focus, { ...c, color_auto: false })" />
               <template v-if="TWO_COLOR.includes(focus)">
-                <div class="text-xs text-gray-400 mt-4 mb-1">Farbe 2 {{ focus === "police" ? "(Segmente 2, 4, …)" : "(Ende)" }}</div>
+                <div class="text-[11px] text-muted mt-4 mb-1.5">Farbe 2 · {{ focus === "police" ? "Segmente 2, 4, …" : "Ende" }}</div>
                 <ColorPicker :hue="layer(focus).color_auto ? layer(focus).eff_hue2 ?? 0.62 : layer(focus).hue2"
                              :saturation="layer(focus).color_auto ? layer(focus).eff_saturation2 ?? 1 : layer(focus).saturation2"
                              :palette="palette"
@@ -446,99 +461,88 @@ onUnmounted(() => { releaseAll(); window.removeEventListener("keydown", kd); win
               </template>
             </template>
           </div>
+
           <div class="space-y-5">
             <div>
-              <div class="flex justify-between text-sm mb-1"><span class="font-semibold">Stärke</span>
-                <span class="font-mono">{{ Math.round((layer(focus).level ?? 1) * 100) }}%</span></div>
-              <input type="range" min="0" max="1" step="0.01" :value="layer(focus).level"
-                     @input="sendLayer(focus, { level: +$event.target.value })" class="w-full accent-fuchsia-500 h-8" />
+              <div class="flex justify-between text-[13px] mb-1"><span class="text-sub">Stärke</span>
+                <span class="num">{{ Math.round((layer(focus).level ?? 1) * 100) }} %</span></div>
+              <input v-fill type="range" min="0" max="1" step="0.01" :value="layer(focus).level ?? 1"
+                     @input="sendLayer(focus, { level: +$event.target.value })" />
             </div>
             <div v-if="focus === 'police'" class="space-y-3">
               <div>
-                <div class="text-sm font-semibold mb-2">Aufteilung</div>
-                <div class="grid grid-cols-4 gap-1">
-                  <button v-for="n in [2, 4, 6, 8]" :key="n" @click="sendLayer('police', { segments: n })"
-                          class="py-1.5 rounded-md text-sm ring-1"
-                          :class="layer('police').segments === n ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10 hover:bg-white/15'">
-                    {{ n === 4 ? "Viertel" : n + " Teile" }}</button>
+                <div class="text-[13px] text-sub mb-1.5">Aufteilung</div>
+                <div class="seg seg-fill">
+                  <button v-for="n in [2, 4, 6, 8]" :key="n" :class="{ on: layer('police').segments === n }"
+                          @click="sendLayer('police', { segments: n })">{{ n === 4 ? "Viertel" : n + " Teile" }}</button>
                 </div>
               </div>
-              <div class="grid grid-cols-2 gap-1">
-                <button @click="sendLayer('police', { blink: true })" class="py-1.5 rounded-md text-sm ring-1"
-                        :class="layer('police').blink ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">
-                  Doppelblitz 🚨</button>
-                <button @click="sendLayer('police', { blink: false })" class="py-1.5 rounded-md text-sm ring-1"
-                        :class="!layer('police').blink ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">
-                  Farbwechsel ⇄</button>
+              <div class="seg seg-fill">
+                <button :class="{ on: layer('police').blink }" @click="sendLayer('police', { blink: true })">Doppelblitz</button>
+                <button :class="{ on: !layer('police').blink }" @click="sendLayer('police', { blink: false })">Farbwechsel</button>
               </div>
             </div>
-            <div v-if="focus === 'gradient'" class="grid grid-cols-2 gap-1">
-              <button @click="sendLayer('gradient', { move: false })" class="py-1.5 rounded-md text-sm ring-1"
-                      :class="!layer('gradient').move ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">
-                Statisch</button>
-              <button @click="sendLayer('gradient', { move: true })" class="py-1.5 rounded-md text-sm ring-1"
-                      :class="layer('gradient').move ? 'bg-fuchsia-600/60 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">
-                Bewegt ⇢</button>
+            <div v-if="focus === 'gradient'" class="seg seg-fill">
+              <button :class="{ on: !layer('gradient').move }" @click="sendLayer('gradient', { move: false })">Statisch</button>
+              <button :class="{ on: layer('gradient').move }" @click="sendLayer('gradient', { move: true })">Bewegt</button>
             </div>
             <div v-if="focus !== 'solid' && !(focus === 'gradient' && !layer('gradient').move)">
-              <div class="text-sm font-semibold mb-2">Tempo</div>
+              <div class="text-[13px] text-sub mb-1.5">Tempo</div>
               <SpeedControl :sync="layer(focus).sync" :mult="layer(focus).mult" :hz="layer(focus).hz" :bpm="bpm"
                             :mults="mults" @change="(c) => sendLayer(focus, c)" />
-              <p class="text-xs text-gray-500 mt-2">♩ Global = läuft im globalen Takt (×-Faktor pro Beat). TAP = eigenes Tempo eintippen.</p>
+              <p class="text-[11px] text-muted mt-2">Takt: Faktor pro Beat des globalen Tempos. Frei: eigenes Tempo, per TAP eintippbar.</p>
             </div>
-            <button @click="sendLayer(focus, { on: !layer(focus).on })"
-                    class="w-full py-2.5 rounded-lg font-semibold ring-1"
-                    :class="layer(focus).on ? 'bg-fuchsia-600 ring-fuchsia-300' : 'bg-white/5 ring-white/10'">
-              {{ focused.label }} {{ layer(focus).on ? "AN" : "AUS" }}{{ editScene ? ` in „${editScene.name}"` : "" }}</button>
+            <button @click="sendLayer(focus, { on: !layer(focus).on })" class="btn w-full !h-9" :class="{ 'is-on': layer(focus).on }">
+              <span class="led" :class="{ on: layer(focus).on }"></span>
+              {{ focused.label }} {{ layer(focus).on ? "an" : "aus" }}<span v-if="editScene" class="text-muted font-normal">· {{ editScene.name }}</span></button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Erweitert -->
-    <details class="bg-white/5 rounded-xl p-4">
-      <summary class="text-xs uppercase text-gray-400 cursor-pointer">Erweitert</summary>
-      <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-        <div class="grid grid-cols-2 gap-2 sm:col-span-2">
-          <button @click="send({ direction: -state.direction })"
-                  class="py-2.5 rounded-lg text-sm ring-1 bg-white/5 ring-white/10 hover:bg-white/15">
-            Richtung {{ state.direction > 0 ? "→" : "←" }}</button>
-          <button v-for="o in [{ k: 'mirror', label: 'Gespiegelt ⇆' }, { k: 'beat_sync', label: 'Beat-Pump 🥁' },
-                               { k: 'bump_beat', label: 'Bump auf jeden Beat' }]"
-                  :key="o.k" @click="send({ [o.k]: !state[o.k] })" class="py-2.5 rounded-lg text-sm ring-1"
-                  :class="state[o.k] ? 'bg-fuchsia-600/60 ring-fuchsia-300/60' : 'bg-white/5 ring-white/10 hover:bg-white/15'">
-            {{ o.label }}</button>
+    <details class="panel group">
+      <summary class="panel-h cursor-pointer !border-b-0 group-open:!border-b">
+        <SlidersHorizontal class="w-4 h-4 text-muted" /><span class="eyebrow">Erweitert</span>
+        <ChevronDown class="ml-auto w-4 h-4 text-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <div class="p-4 space-y-5">
+        <div class="flex flex-wrap gap-2">
+          <button @click="send({ direction: -state.direction })" class="btn btn-sm">
+            <ArrowRight v-if="state.direction > 0" /><ArrowLeft v-else />Richtung</button>
+          <button v-for="o in [{ k: 'mirror', label: 'Gespiegelt' }, { k: 'beat_sync', label: 'Beat-Pump' }, { k: 'bump_beat', label: 'Bump auf jeden Beat' }]"
+                  :key="o.k" @click="send({ [o.k]: !state[o.k] })" class="btn btn-sm" :class="{ 'is-on': state[o.k] }">
+            <span class="led" :class="{ on: state[o.k] }"></span>{{ o.label }}</button>
         </div>
-        <label class="block">
-          <div class="flex justify-between text-sm mb-1"><span>Bump-Stärke</span>
-            <span class="font-mono">{{ Math.round(state.bump_gain * 100) }}%</span></div>
-          <input type="range" min="0" max="1" step="0.01" :value="state.bump_gain"
-                 @input="send({ bump_gain: +$event.target.value })" class="w-full accent-sky-400" />
-        </label>
-        <label class="block">
-          <div class="flex justify-between text-sm mb-1"><span>Bump-Länge</span>
-            <span class="font-mono">{{ (+state.bump_decay).toFixed(2) }} s</span></div>
-          <input type="range" min="0.05" max="1" step="0.01" :value="state.bump_decay"
-                 @input="send({ bump_decay: +$event.target.value })" class="w-full accent-sky-400" />
-        </label>
-        <label class="block">
-          <div class="flex justify-between text-sm mb-1"><span>Blinder ausblenden</span>
-            <span class="font-mono">{{ (+state.blinder_fade).toFixed(1) }} s</span></div>
-          <input type="range" min="0.2" max="5" step="0.1" :value="state.blinder_fade"
-                 @input="send({ blinder_fade: +$event.target.value })" class="w-full accent-amber-300" />
-        </label>
-        <label class="block">
-          <div class="flex justify-between text-sm mb-1"><span>Szenen überblenden</span>
-            <span class="font-mono">{{ (+state.scene_fade).toFixed(1) }} s</span></div>
-          <input type="range" min="0" max="5" step="0.1" :value="state.scene_fade"
-                 @input="send({ scene_fade: +$event.target.value })" class="w-full accent-fuchsia-400" />
-        </label>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-4">
+          <label class="block">
+            <div class="flex justify-between text-[13px] mb-1"><span class="text-sub">Bump-Stärke</span>
+              <span class="num">{{ Math.round(state.bump_gain * 100) }} %</span></div>
+            <input v-fill type="range" min="0" max="1" step="0.01" :value="state.bump_gain" @input="send({ bump_gain: +$event.target.value })" />
+          </label>
+          <label class="block">
+            <div class="flex justify-between text-[13px] mb-1"><span class="text-sub">Bump-Länge</span>
+              <span class="num">{{ (+state.bump_decay).toFixed(2) }} s</span></div>
+            <input v-fill type="range" min="0.05" max="1" step="0.01" :value="state.bump_decay" @input="send({ bump_decay: +$event.target.value })" />
+          </label>
+          <label class="block">
+            <div class="flex justify-between text-[13px] mb-1"><span class="text-sub">Blinder ausblenden</span>
+              <span class="num">{{ (+state.blinder_fade).toFixed(1) }} s</span></div>
+            <input v-fill type="range" min="0.2" max="5" step="0.1" :value="state.blinder_fade" @input="send({ blinder_fade: +$event.target.value })" />
+          </label>
+          <label class="block">
+            <div class="flex justify-between text-[13px] mb-1"><span class="text-sub">Szenen überblenden</span>
+              <span class="num">{{ (+state.scene_fade).toFixed(1) }} s</span></div>
+            <input v-fill type="range" min="0" max="5" step="0.1" :value="state.scene_fade" @input="send({ scene_fade: +$event.target.value })" />
+          </label>
+        </div>
+        <div class="pt-4 border-t border-line">
+          <div class="text-[11px] text-muted mb-2.5">Tastatur</div>
+          <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-2 text-[12px] text-sub">
+            <div v-for="k in KEYS" :key="k[0]" class="flex items-center gap-2"><span class="kbd">{{ k[0] }}</span>{{ k[1] }}</div>
+          </div>
+        </div>
       </div>
-      <p class="text-xs text-gray-500 mt-4">
-        Tastatur: Leertaste = Alles aus (halten) · B = Blinder · F = Flash · Enter = Bump · 1–9, 0 = Effekte · T = Tap · S = Strobe an/aus.
-        Beat-Pump lässt alles im globalen Takt pumpen. Flächen (Solid, Atmen, Regenbogen, Farbwechsel) mischen sich wie Licht,
-        Muster (Chase, Theater, Welle, Funkeln) liegen deckend darüber.
-      </p>
     </details>
 
     <PatternEditor v-if="editPattern" :pattern="editPattern" :palette="palette" :look="target"
@@ -552,10 +556,26 @@ onUnmounted(() => { releaseAll(); window.removeEventListener("keydown", kd); win
 </template>
 
 <style scoped>
-.bump { animation: bump 0.3s ease-out; }
-@keyframes bump { from { background: rgba(125, 211, 252, 0.9); color: #000; } to { background: rgba(56, 189, 248, 0.2); } }
-.bpm-input { -moz-appearance: textfield; appearance: textfield; }
-.bpm-input::-webkit-inner-spin-button, .bpm-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* Pads im Hardware-Stil: Icon + Taste oben, Beschriftung unten. */
+.pad {
+  position: relative; height: 96px; padding: 12px; border-radius: 10px;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; text-align: left;
+  background: var(--color-raised); border: 1px solid var(--color-line-strong);
+  touch-action: none; user-select: none;
+  transition: background-color .08s, border-color .08s, color .08s, box-shadow .08s;
+}
+.pad:hover { border-color: #45454e; }
+.pad :deep(svg) { width: 18px; height: 18px; color: var(--color-muted); }
+.pad-label { font-size: 14px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.pad-hint { font-size: 11px; color: var(--color-muted); margin-top: 2px; }
+.held-blackout { background: #000; border-color: var(--color-danger); color: var(--color-danger); box-shadow: inset 0 0 0 1px var(--color-danger); }
+.held-blackout :deep(svg), .held-blackout .pad-hint { color: var(--color-danger); }
+.held-blinder { background: #ffe4bd; border-color: #ffe4bd; color: #2b1b06; box-shadow: 0 0 24px rgba(255, 214, 160, .35); }
+.held-flash { background: var(--color-ink); border-color: var(--color-ink); color: var(--color-canvas); }
+.held-blinder :deep(svg), .held-blinder .pad-hint, .held-flash :deep(svg), .held-flash .pad-hint { color: inherit; opacity: .7; }
+.bump-hit { animation: bump-hit .3s ease-out; }
+@keyframes bump-hit { from { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-ink); } }
+.tap-pad:active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-ink); }
 .beat { animation: beat linear infinite; }
-@keyframes beat { 0% { opacity: 1; transform: scale(1.3); } 30% { opacity: 0.25; transform: scale(1); } 100% { opacity: 0.15; } }
+@keyframes beat { 0% { opacity: 1; } 25% { opacity: .2; } 100% { opacity: .2; } }
 </style>

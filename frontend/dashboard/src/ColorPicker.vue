@@ -45,26 +45,25 @@ defineExpose({ toHex });
 
 <template>
   <div :class="disabled ? 'opacity-40 pointer-events-none' : ''">
-    <div class="grid grid-cols-11 gap-1.5 mb-3">
+    <div class="flex flex-wrap gap-1.5 mb-3">
       <button v-for="p in palette" :key="p.name" @click="pick(p.hue, p.saturation)" :title="p.name"
-              class="aspect-square rounded-md ring-2 transition active:scale-90"
-              :class="isSel(p) ? 'ring-white scale-110' : 'ring-white/10'"
+              class="w-[26px] h-[26px] rounded-[5px] transition"
+              :class="isSel(p) ? 'ring-2 ring-ink ring-offset-2 ring-offset-panel' : 'ring-1 ring-inset ring-black/30 hover:scale-110'"
               :style="{ background: toHex(p.hue, p.saturation) }"></button>
     </div>
-    <div class="relative h-28 rounded-lg overflow-hidden cursor-crosshair touch-none ring-1 ring-white/10"
+    <div class="relative h-28 rounded-md overflow-hidden cursor-crosshair touch-none border border-line"
          @pointerdown="padDown" @pointermove="$event.buttons && !disabled && padPick($event)">
       <div class="absolute inset-0" style="background: linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)"></div>
       <div class="absolute inset-0" style="background: linear-gradient(to bottom,#fff,rgba(255,255,255,0))"></div>
-      <div class="absolute w-5 h-5 rounded-full ring-2 ring-black border-2 border-white -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+      <div class="absolute w-4 h-4 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.5),0_1px_4px_rgba(0,0,0,.5)] -translate-x-1/2 -translate-y-1/2 pointer-events-none"
            :style="{ left: hue * 100 + '%', top: saturation * 100 + '%', background: hex }"></div>
     </div>
-    <div class="flex items-center gap-3 mt-2 text-xs text-gray-400">
-      <label class="flex items-center gap-2 cursor-pointer">
-        <input type="color" :value="hex" @input="fromHex($event.target.value)"
-               class="w-8 h-8 rounded bg-transparent cursor-pointer" />
-        <span class="font-mono">{{ hex }}</span>
+    <div class="flex items-center gap-2 mt-2">
+      <label class="relative w-6 h-6 rounded-[5px] overflow-hidden border border-line-strong cursor-pointer" :style="{ background: hex }" title="Farbe exakt wählen">
+        <input type="color" :value="hex" @input="fromHex($event.target.value)" class="absolute inset-0 opacity-0 cursor-pointer" />
       </label>
-      <span class="ml-auto">oben = weiß · unten = volle Farbe</span>
+      <span class="num text-xs text-sub uppercase">{{ hex }}</span>
+      <span class="ml-auto text-[11px] text-muted">Feld: oben weiß · unten satt</span>
     </div>
   </div>
 </template>
